@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0605">
+  <title>Hushabye phone test</title>
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+  <style>
+    .t-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    .t-table td { padding: 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+    .t-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    .good { color: var(--calm); } .bad { color: var(--cry); }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; color: var(--dim); margin: 0; max-height: 30vh; overflow: auto; }
+    .group p, .group ol { margin: 0; }
+    .group ol { padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+  </style>
+</head>
+<body>
+  <main id="main">
+    <header class="top">
+      <h1>Phone test</h1>
+      <a href="index.html" class="chip">Back to Hushabye</a>
+    </header>
+
+    <p class="hint">Three quick checks on this phone, with the Bluetooth speaker connected. They decide which settings to use at night. Nothing is recorded or sent anywhere.</p>
+
+    <section class="group">
+      <h3>Options for this run</h3>
+      <label class="field toggle"><span>Echo cancellation</span><input type="checkbox" id="optEc" checked></label>
+      <label class="field toggle"><span>Keep the screen on (wake lock)</span><input type="checkbox" id="optWake"></label>
+      <label class="field toggle"><span><span>Play through an audio element</span><small>May survive screen-off better on some phones</small></span><input type="checkbox" id="optElement"></label>
+      <label class="field">
+        <span class="field-head"><span>Test sound volume</span><output id="volOut">20%</output></span>
+        <input type="range" id="vol" min="0" max="100" value="20">
+      </label>
+      <button type="button" class="primary" id="go">Start test</button>
+    </section>
+
+    <section class="group">
+      <h3>Live</h3>
+      <table class="t-table">
+        <tr><td>Running for</td><td id="rElapsed">-</td></tr>
+        <tr><td>Microphone level now</td><td id="rLevel">-</td></tr>
+        <tr><td>Audio engine</td><td id="rCtx">-</td></tr>
+        <tr><td>Echo cancellation actually on</td><td id="rEc">-</td></tr>
+        <tr><td>Screen wake lock</td><td id="rWake">-</td></tr>
+        <tr><td>Sound outputs seen</td><td id="rOut">-</td></tr>
+      </table>
+    </section>
+
+    <section class="group">
+      <h3>Test A: screen off</h3>
+      <ol>
+        <li>Start the test with the wake lock off.</li>
+        <li>Press the power button to turn the screen off. Wait two minutes. Listen: does the sound keep playing?</li>
+        <li>Turn the screen back on and read the result here.</li>
+      </ol>
+      <table class="t-table">
+        <tr><td>Time with screen off or app hidden</td><td id="aHidden">-</td></tr>
+        <tr><td>Seconds of microphone audio received while hidden</td><td id="aWindows">-</td></tr>
+        <tr><td>Longest gap in microphone audio</td><td id="aGap">-</td></tr>
+        <tr><td>Average microphone level while hidden</td><td id="aLevel">-</td></tr>
+        <tr><td>Audio engine interruptions</td><td id="aInterrupt">-</td></tr>
+        <tr><td><strong>Verdict</strong></td><td id="aVerdict">-</td></tr>
+      </table>
+    </section>
+
+    <section class="group">
+      <h3>Test B: speaker disconnects</h3>
+      <ol>
+        <li>While the test runs, switch the Bluetooth speaker off.</li>
+        <li>Notice where the sound goes (phone speaker, or silence).</li>
+        <li>Switch it back on.</li>
+      </ol>
+      <table class="t-table">
+        <tr><td>Output changes noticed by the browser</td><td id="bChanges">-</td></tr>
+        <tr><td><strong>Verdict</strong></td><td id="bVerdict">-</td></tr>
+      </table>
+    </section>
+
+    <section class="group">
+      <h3>Test C: echo cancellation</h3>
+      <ol>
+        <li>Keep the room quiet. Run the test for 20 seconds with echo cancellation on, and press Stop.</li>
+        <li>Run it again for 20 seconds with echo cancellation off.</li>
+        <li>Also listen: when the test starts, does the speaker get quieter, thinner, or move to the phone?</li>
+      </ol>
+      <table class="t-table">
+        <tr><td>Microphone level, echo cancellation on</td><td id="cOn">-</td></tr>
+        <tr><td>Microphone level, echo cancellation off</td><td id="cOff">-</td></tr>
+        <tr><td><strong>Verdict</strong></td><td id="cVerdict">-</td></tr>
+      </table>
+    </section>
+
+    <section class="group">
+      <h3>Results to share</h3>
+      <button type="button" id="copy">Copy results</button>
+      <pre id="report">Run a test first.</pre>
+    </section>
+  </main>
+
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const KEY = 'hushabye.phonetest.v1';
+    const db = (v) => 20 * Math.log10(Math.max(v, 1e-9));
+    const fmtDb = (v) => (Number.isFinite(v) ? `${v.toFixed(0)} dB` : '-');
+    const fmtSec = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
+
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (_) { saved = {}; }
+
+    let ctx = null, stream = null, node = null, gain = null, outEl = null, wake = null, timer = null;
+    let run = null;
+
+    function newRun() {
+      return {
+        startedAt: Date.now(), ec: $('optEc').checked, wakeLock: $('optWake').checked, element: $('optElement').checked,
+        ecActual: null, windows: 0, lastWindowAt: performance.now(), longestGap: 0,
+        hiddenMs: 0, hiddenSince: null, hiddenWindows: 0, hiddenPower: 0,
+        visibleWindows: 0, visiblePower: 0,
+        interruptions: 0, ctxStates: [], deviceChanges: [], wakeReleases: 0, micEnded: false,
+      };
+    }
+
+    async function outputs() {
+      try {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        return list.filter((d) => d.kind === 'audiooutput').map((d) => d.label || d.deviceId || 'unnamed');
+      } catch (_) { return []; }
+    }
+
+    function noiseBuffer(c) {
+      const n = c.sampleRate * 4;
+      const buf = c.createBuffer(1, n, c.sampleRate);
+      const d = buf.getChannelData(0);
+      let y = 0;
+      for (let i = 0; i < n; i++) { y = 0.98 * y + (Math.random() * 2 - 1) * 0.08; d[i] = y; }
+      // Fade the ends so the loop does not click.
+      const f = Math.floor(c.sampleRate * 0.2);
+      for (let i = 0; i < f; i++) { d[i] *= i / f; d[n - 1 - i] *= i / f; }
+      return buf;
+    }
+
+    async function start() {
+      run = newRun();
+      ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+      ctx.onstatechange = () => {
+        if (!run) return;
+        run.ctxStates.push(`${new Date().toLocaleTimeString()} ${ctx.state}`);
+        if (ctx.state !== 'running') run.interruptions++;
+      };
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(ctx);
+      src.loop = true;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 600;
+      gain = ctx.createGain();
+      setVolume();
+      src.connect(lp); lp.connect(gain);
+      if (run.element) {
+        const dest = ctx.createMediaStreamDestination();
+        gain.connect(dest);
+        outEl = new Audio();
+        outEl.srcObject = dest.stream;
+        await outEl.play().catch(() => {});
+      } else {
+        gain.connect(ctx.destination);
+      }
+      src.start();
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: run.ec, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+        });
+        const track = stream.getAudioTracks()[0];
+        run.ecActual = track.getSettings ? track.getSettings().echoCancellation : null;
+        track.addEventListener('ended', () => { if (run) run.micEnded = true; });
+        await ctx.audioWorklet.addModule('js/worklets/capture-processor.js');
+        const mic = ctx.createMediaStreamSource(stream);
+        node = new AudioWorkletNode(ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
+        const sink = ctx.createGain();
+        sink.gain.value = 0;
+        mic.connect(node); node.connect(sink); sink.connect(ctx.destination);
+        node.port.onmessage = (e) => onMessage(e.data);
+      } catch (err) {
+        run.micError = err.message;
+      }
+
+      if (run.wakeLock && 'wakeLock' in navigator) await lock();
+      run.outputsAtStart = await outputs();
+      timer = setInterval(render, 500);
+      $('go').textContent = 'Stop test';
+      $('go').classList.remove('primary');
+      render();
+    }
+
+    async function lock() {
+      try {
+        wake = await navigator.wakeLock.request('screen');
+        wake.addEventListener('release', () => { wake = null; if (run) run.wakeReleases++; });
+      } catch (_) { wake = null; }
+    }
+
+    function onMessage(msg) {
+      if (!run) return;
+      if (msg.type === 'meter') { run.levelNow = db(msg.rms); return; }
+      if (msg.type !== 'window') return;
+      const now = performance.now();
+      run.longestGap = Math.max(run.longestGap, (now - run.lastWindowAt) / 1000);
+      run.lastWindowAt = now;
+      run.windows++;
+      let p = 0;
+      for (let i = 0; i < msg.samples.length; i++) p += msg.samples[i] * msg.samples[i];
+      p /= msg.samples.length;
+      if (document.visibilityState === 'hidden') { run.hiddenWindows++; run.hiddenPower += p; }
+      else { run.visibleWindows++; run.visiblePower += p; }
+    }
+
+    async function stop() {
+      clearInterval(timer);
+      if (run) {
+        if (run.hiddenSince) { run.hiddenMs += Date.now() - run.hiddenSince; run.hiddenSince = null; }
+        run.durationSec = (Date.now() - run.startedAt) / 1000;
+        saved.last = summarise(run);
+        // Remember one result per echo-cancellation setting, for Test C.
+        if (run.visibleWindows >= 5) saved[run.ec ? 'ecOn' : 'ecOff'] = db(Math.sqrt(run.visiblePower / run.visibleWindows));
+        if (run.hiddenMs > 20000) saved.screenOff = saved.last;
+        if (run.deviceChanges.length) saved.deviceChanges = run.deviceChanges;
+        localStorage.setItem(KEY, JSON.stringify(saved));
+      }
+      if (node) node.port.onmessage = null;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      if (outEl) { outEl.pause(); outEl.srcObject = null; }
+      if (wake) wake.release().catch(() => {});
+      if (ctx) await ctx.close().catch(() => {});
+      ctx = stream = node = outEl = wake = null;
+      run = null;
+      $('go').textContent = 'Start test';
+      $('go').classList.add('primary');
+      render();
+    }
+
+    function summarise(r) {
+      const hiddenSec = (r.hiddenMs + (r.hiddenSince ? Date.now() - r.hiddenSince : 0)) / 1000;
+      return {
+        when: new Date(r.startedAt).toISOString(),
+        durationSec: Math.round(r.durationSec ?? (Date.now() - r.startedAt) / 1000),
+        echoCancellationAsked: r.ec, echoCancellationActual: r.ecActual,
+        wakeLock: r.wakeLock, wakeReleases: r.wakeReleases, audioElement: r.element,
+        micError: r.micError || null, micEnded: r.micEnded,
+        windows: r.windows, longestGapSec: Math.round(r.longestGap * 10) / 10,
+        hiddenSec: Math.round(hiddenSec), hiddenWindows: r.hiddenWindows,
+        hiddenLevelDb: r.hiddenWindows ? Math.round(db(Math.sqrt(r.hiddenPower / r.hiddenWindows))) : null,
+        visibleLevelDb: r.visibleWindows ? Math.round(db(Math.sqrt(r.visiblePower / r.visibleWindows))) : null,
+        interruptions: r.interruptions, ctxStates: r.ctxStates.slice(-12),
+        outputsAtStart: r.outputsAtStart, deviceChanges: r.deviceChanges.slice(-8),
+      };
+    }
+
+    function setVolume() {
+      const v = Number($('vol').value);
+      $('volOut').textContent = `${v}%`;
+      if (gain) gain.gain.value = (v / 100) ** 2;
+    }
+
+    function verdict(node, text, good) {
+      node.textContent = text;
+      node.className = good == null ? '' : good ? 'good' : 'bad';
+    }
+
+    function render() {
+      const live = run ? summarise(run) : null;
+      $('rElapsed').textContent = live ? fmtSec(live.durationSec) : '-';
+      $('rLevel').textContent = run ? (run.micError ? 'No microphone: ' + run.micError : fmtDb(run.levelNow)) : '-';
+      $('rCtx').textContent = ctx ? ctx.state : '-';
+      $('rEc').textContent = run ? (run.ecActual == null ? 'unknown' : run.ecActual ? 'yes' : 'no') : '-';
+      $('rWake').textContent = run ? (wake ? 'held' : run.wakeLock ? 'not held' : 'off') : '-';
+      if (live && live.outputsAtStart) $('rOut').textContent = live.outputsAtStart.join(', ') || 'none listed';
+
+      // Test A
+      const a = live && live.hiddenSec > 5 ? live : saved.screenOff;
+      if (a) {
+        $('aHidden').textContent = fmtSec(a.hiddenSec);
+        $('aWindows').textContent = `${a.hiddenWindows} of about ${a.hiddenSec}`;
+        $('aGap').textContent = fmtSec(a.longestGapSec);
+        $('aLevel').textContent = a.hiddenLevelDb == null ? 'no audio' : `${a.hiddenLevelDb} dB (on screen: ${a.visibleLevelDb} dB)`;
+        $('aInterrupt').textContent = String(a.interruptions);
+        if (a.hiddenSec < 20) verdict($('aVerdict'), 'Keep the screen off for longer', null);
+        else {
+          const coverage = a.hiddenWindows / a.hiddenSec;
+          const muted = a.hiddenLevelDb != null && a.visibleLevelDb != null && a.hiddenLevelDb < a.visibleLevelDb - 25;
+          if (coverage > 0.9 && !muted && a.longestGapSec < 5) verdict($('aVerdict'), 'Listening works with the screen off', true);
+          else if (coverage > 0.9 && muted) verdict($('aVerdict'), 'Microphone goes silent with the screen off: keep the screen on', false);
+          else verdict($('aVerdict'), 'Listening stops with the screen off: keep the screen on', false);
+        }
+      }
+
+      // Test B
+      const changes = (run ? run.deviceChanges : saved.deviceChanges) || [];
+      $('bChanges').textContent = changes.length ? String(changes.length) : run ? 'none yet' : '-';
+      if (changes.length) verdict($('bVerdict'), 'A disconnect can be detected: auto-mute will work', true);
+      else if (run) verdict($('bVerdict'), 'Waiting. If the speaker was switched off and this stays empty, auto-mute will not work on this phone', null);
+
+      // Test C
+      $('cOn').textContent = saved.ecOn == null ? '-' : fmtDb(saved.ecOn);
+      $('cOff').textContent = saved.ecOff == null ? '-' : fmtDb(saved.ecOff);
+      if (saved.ecOn != null && saved.ecOff != null) {
+        const removed = saved.ecOff - saved.ecOn;
+        if (removed > 6) verdict($('cVerdict'), `Echo cancellation removes about ${removed.toFixed(0)} dB of the app's own sound`, true);
+        else verdict($('cVerdict'), `Echo cancellation makes little difference (${removed.toFixed(0)} dB): it can stay off`, null);
+      }
+
+      $('report').textContent = JSON.stringify({ userAgent: navigator.userAgent, live, saved }, null, 1);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (!run) return;
+      if (document.visibilityState === 'hidden') run.hiddenSince = Date.now();
+      else {
+        if (run.hiddenSince) run.hiddenMs += Date.now() - run.hiddenSince;
+        run.hiddenSince = null;
+        if (run.wakeLock && !wake) lock();
+        render();
+      }
+    });
+
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', async () => {
+        if (!run) return;
+        run.deviceChanges.push(`${new Date().toLocaleTimeString()}: ${(await outputs()).join(', ') || 'none listed'}`);
+        render();
+      });
+    }
+
+    $('vol').addEventListener('input', setVolume);
+    $('go').addEventListener('click', () => (run ? stop() : start()));
+    $('copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('report').textContent);
+        $('copy').textContent = 'Copied';
+      } catch (_) {
+        $('copy').textContent = 'Select the text below and copy it';
+      }
+      setTimeout(() => ($('copy').textContent = 'Copy results'), 2500);
+    });
+    render();
+  </script>
+</body>
+</html>

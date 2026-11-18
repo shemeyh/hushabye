@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0605">
+  <title>Hushabye</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main id="main">
+    <header class="top">
+      <h1>Hushabye</h1>
+      <div class="chips">
+        <span class="chip" id="chipShadow" hidden>Shadow mode</span>
+        <span class="chip" id="chipFast" hidden>Fast test clock</span>
+        <span class="chip" id="chipEngine" hidden></span>
+        <span class="chip" id="chipWake" hidden>Screen kept on</span>
+      </div>
+    </header>
+
+    <div class="banner" id="banner" hidden role="alert">
+      <p id="bannerText"></p>
+      <button type="button" id="bannerAction"></button>
+    </div>
+
+    <section class="status" aria-live="polite">
+      <div class="level-name" id="levelName">Stopped</div>
+      <div class="pips" id="pips" aria-hidden="true">
+        <span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span>
+      </div>
+      <div class="state-line" id="stateLine">Ready when you are</div>
+    </section>
+
+    <section class="meters" aria-label="Listening">
+      <div class="meter-row">
+        <span class="meter-label">Room sound</span>
+        <div class="bar"><div class="fill" id="micBar"></div></div>
+      </div>
+      <div class="meter-row">
+        <span class="meter-label">Cry score</span>
+        <div class="bar"><div class="fill cry" id="scoreBar"></div><div class="mark" id="scoreMark"></div></div>
+      </div>
+      <div class="meter-row">
+        <span class="meter-label">Last 5 seconds</span>
+        <div class="dots" id="historyDots">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+    </section>
+
+    <button type="button" class="big" id="startStop">Start</button>
+
+    <div class="actions">
+      <button type="button" id="pauseBtn" disabled>Pause 20 min</button>
+      <button type="button" id="simBtn" aria-pressed="false" disabled>Simulate crying</button>
+      <button type="button" id="nightBtn">Night screen</button>
+    </div>
+
+    <section class="log">
+      <h2>Tonight</h2>
+      <ol id="log"><li class="empty">Nothing yet.</li></ol>
+    </section>
+
+    <footer class="foot">
+      <button type="button" id="settingsBtn">Settings</button>
+      <button type="button" id="setupBtn">Setup guide</button>
+      <a href="phone-test.html">Phone test</a>
+    </footer>
+  </main>
+
+  <!-- Setup guide -->
+  <div class="sheet" id="setup" hidden>
+    <div class="sheet-body">
+      <div class="steps" id="setupDots"><span></span><span></span><span></span><span></span></div>
+
+      <section class="step" data-step="0">
+        <h2>Safe sleep comes first</h2>
+        <ul>
+          <li>Always on the back, on a flat, firm surface.</li>
+          <li>Nothing loose in the bassinet: no pillows, blankets, bumpers or toys.</li>
+          <li>This is a soother, not a baby monitor. It cannot tell why a baby is crying, and it does not replace you.</li>
+        </ul>
+      </section>
+
+      <section class="step" data-step="1" hidden>
+        <h2>Where things go</h2>
+        <ul>
+          <li><strong>Speaker:</strong> at least 2 m from the baby. Never in or on the bassinet.</li>
+          <li><strong>Phone:</strong> near the bassinet but out of reach, with its charging cable well away from the baby. Never in the bassinet.</li>
+          <li>Nothing gets attached to the bassinet.</li>
+          <li><strong>Do Not Disturb on.</strong> Otherwise calls and notifications play through the speaker.</li>
+          <li>Set the phone's media volume and the speaker's volume where you will leave them. Changing either later changes how loud everything is.</li>
+        </ul>
+      </section>
+
+      <section class="step" data-step="2" hidden>
+        <h2>Set the volume cap</h2>
+        <ol>
+          <li>Open a free sound-meter app on a second phone, set to <strong>dBA</strong> (A-weighted).</li>
+          <li>Hold it where the baby's head will be.</li>
+          <li>Play the loudest level and lower the cap until the meter reads <strong>50 dBA or less</strong>.</li>
+        </ol>
+        <p class="hint">Aim for 45 to 50. Phone meters are approximate, and deep rumble reads lower in dBA than it really is. 50 dBA is the limit hospital nurseries use.</p>
+        <div class="calib">
+          <div class="row">
+            <button type="button" id="calibLoud" aria-pressed="false">Play loudest level</button>
+            <button type="button" id="calibBase" aria-pressed="false">Play baseline</button>
+          </div>
+          <label class="field">
+            <span class="field-head"><span>Maximum volume cap</span><output id="calibCapOut"></output></span>
+            <input type="range" id="calibCap" min="0" max="100" step="1">
+          </label>
+        </div>
+        <p class="hint">No level, music or voice can go above this cap. If you change the phone or speaker volume later, do this step again.</p>
+      </section>
+
+      <section class="step" data-step="3" hidden>
+        <h2>First nights: shadow mode</h2>
+        <p>Shadow mode is on. The app plays the baseline sound, listens, and writes down what it would have done, but it does not raise the volume.</p>
+        <p>Check the log in the morning. When the cry detection matches what really happened, turn shadow mode off in Settings.</p>
+        <p class="hint">Before the first night, run the Phone test page once. It checks that this phone keeps listening with the screen dimmed and what happens if the speaker disconnects.</p>
+      </section>
+
+      <div class="sheet-actions">
+        <button type="button" id="setupBack">Back</button>
+        <button type="button" class="primary" id="setupNext">I understand</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="sheet" id="settings" hidden>
+    <div class="sheet-body">
+      <div class="sheet-head">
+        <h2>Settings</h2>
+        <button type="button" id="settingsClose">Done</button>
+      </div>
+      <div id="settingsForm"></div>
+    </div>
+  </div>
+
+  <!-- Baby needs you -->
+  <div class="overlay needs" id="needsYou" hidden role="alertdialog" aria-labelledby="needsTitle">
+    <div class="needs-inner">
+      <h2 id="needsTitle">Baby needs you</h2>
+      <p>Soothing did not settle the crying, so the sound is back at baseline. Time for a feed, a change or a cuddle.</p>
+      <div class="row">
+        <button type="button" class="primary" id="needsPause">Pause 20 min</button>
+        <button type="button" id="needsResume">Listen again now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Night screen: pure black, very dim text -->
+  <div class="overlay night" id="night" hidden>
+    <div class="night-text" id="nightText">
+      <div id="nightClock"></div>
+      <div id="nightLevel"></div>
+      <div class="night-hint">Double-tap to wake the screen</div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

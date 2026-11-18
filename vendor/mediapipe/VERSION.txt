@@ -1,0 +1,1 @@
+tasks-audio 0.10.35 (Apache-2.0) from https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@0.10.35
