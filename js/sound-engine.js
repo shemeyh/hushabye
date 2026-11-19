@@ -17,8 +17,8 @@ import { createWombChain, DEFAULT_WOMB } from './womb-filter.js';
 import { biquadCoeffs, biquadInPlace, clamp, fromDb, makeSeamless, normaliseRms } from './dsp.js';
 
 export const DEFAULT_SOUND = {
-  cap: 40,             // 0-100; every 2 points is 1 dB; 100 = full scale
-  baselineDb: -16,     // how far below the loudest level the baseline sits
+  cap: 75,             // 0-100; every 2 points is 1 dB; 100 = full scale
+  baselineDb: -12,     // how far below the loudest level the baseline sits
   bpm: 75,             // heartbeat rate of the whoosh
   whooshDepth: 0.35,   // 0 = steady, 1 = fully pulsing
   tone: 500,           // rumble low-pass, Hz

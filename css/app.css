@@ -117,6 +117,7 @@ button.primary, button[aria-pressed="true"] {
 }
 .bar .fill { height: 100%; width: 0; background: var(--dim); border-radius: 5px; transition: width 0.12s linear; }
 .bar .fill.cry { background: var(--cry); transition: width 0.4s; }
+.bar .fill.out { background: var(--accent); transition: width 0.25s linear; }
 .bar .mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: 0.6; left: 25%; }
 .dots { display: flex; gap: 8px; }
 .dots span { width: 12px; height: 12px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); }

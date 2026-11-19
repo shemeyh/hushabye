@@ -10,7 +10,7 @@ import * as store from './store.js';
 const $ = (id) => document.getElementById(id);
 
 // Shown at the bottom of the page. Keep in step with VERSION in sw.js.
-const APP_VERSION = 3;
+const APP_VERSION = 4;
 
 let settings = store.loadSettings();
 const engine = new SoundEngine(settings.sound);
@@ -35,6 +35,9 @@ let lastThreshold = 0.25;
 let detectorEngine = 'none';
 let bannerHandler = null;
 let recordingMuted = false;
+let clockWarned = false;
+let silentSince = 0;
+let silentWarned = false;
 
 // ---------------------------------------------------------------- helpers
 
@@ -91,7 +94,7 @@ function log(text, kind = 'info') {
 async function restoreLog() {
   try {
     const since = Date.now() - 14 * 3600 * 1000;
-    const events = (await store.recentEvents(200)).filter((e) => e.at >= since);
+    const events = (await store.recentEvents(200)).filter((e) => e.at >= since && e.kind !== 'diag');
     for (const e of events) addLogRow(e.text, e.kind, new Date(e.at));
     store.pruneLog();
   } catch (_) { /* no IndexedDB: the log just starts empty */ }
@@ -257,12 +260,15 @@ async function start() {
     lastReal = lastWindowReal = performance.now();
     interrupted = stalled = false;
     lastScore = 0;
-    scoreBatch = { at: Date.now(), scores: [], levels: [] };
+    clockWarned = silentWarned = false;
+    silentSince = 0;
+    scoreBatch = newBatch();
     dispatch({ type: 'start', t: 0 });
 
     await startDetector();
     acquireWakeLock();
     outputsSnapshot = await snapshotOutputs();
+    recordDiagnostics();
     watchdogTimer = setInterval(watchdog, 5000);
     if ('mediaSession' in navigator && window.MediaMetadata) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: 'Hushabye', artist: 'Womb sound' });
@@ -478,17 +484,82 @@ function onWindow(d) {
   lastThreshold = d.threshold;
   dispatch({ type: 'window', crying: simCrying || d.crying, t: vt });
   if (scoreBatch) {
+    if (!scoreBatch.scores.length) scoreBatch.at = Date.now() - 1000;
     scoreBatch.scores.push(Math.round(d.score * 100) / 100);
     scoreBatch.levels.push(machine.level);
+    scoreBatch.mic.push(Math.round(d.levelDb));          // room sound, dB below full scale
+    scoreBatch.out.push(Math.round(Math.max(-120, engine.outputDb()))); // sound leaving the app
     scoreBatch.engine = d.engine;
     if (scoreBatch.scores.length >= 60) flushScores();
   }
 }
 
-function flushScores() {
-  if (scoreBatch && scoreBatch.scores.length) store.logScores(scoreBatch);
-  scoreBatch = { at: Date.now(), scores: [], levels: [] };
+function newBatch() {
+  return { at: Date.now(), scores: [], levels: [], mic: [], out: [] };
 }
+
+function flushScores() {
+  if (scoreBatch && scoreBatch.scores.length) {
+    scoreBatch.spanMs = Date.now() - scoreBatch.at;
+    store.logScores(scoreBatch);
+    checkClock(scoreBatch);
+  }
+  scoreBatch = newBatch();
+}
+
+// Each window is one second of audio. If a minute of windows takes much more
+// or less than a minute, the audio engine is not being driven by a real
+// speaker at normal speed, which is worth knowing when there is no sound.
+function checkClock(batch) {
+  if (clockWarned || !micOk || batch.scores.length < 60) return;
+  const rate = batch.scores.length / (batch.spanMs / 1000);
+  if (Math.abs(rate - 1) > 0.08) {
+    clockWarned = true;
+    log(`Diagnostic: the audio clock is running ${Math.round(Math.abs(rate - 1) * 100)}% ${rate > 1 ? 'fast' : 'slow'}`);
+  }
+}
+
+/** One record per Start with everything needed to debug sound and microphone. */
+function recordDiagnostics() {
+  const ctx = engine.ctx;
+  store.logEvent({
+    kind: 'diag',
+    text: 'diagnostics',
+    data: {
+      appVersion: APP_VERSION,
+      sampleRate: ctx && ctx.sampleRate,
+      contextState: ctx && ctx.state,
+      baseLatency: ctx && ctx.baseLatency,
+      outputLatency: ctx && ctx.outputLatency,
+      cap: settings.sound.cap,
+      baselineDb: settings.sound.baselineDb,
+      outputPath: settings.sound.outputPath,
+      echoCancellationAsked: settings.echoCancellation,
+      microphone: detector ? detector.trackSettings : null,
+      detector: detectorEngine,
+      outputs: outputsSnapshot ? outputsSnapshot.split('\n').map((o) => o.split('|')[1] || 'unnamed') : [],
+      browser: navigator.userAgent,
+    },
+  });
+}
+
+// "Sound out" meter: what the app is sending to the speaker, after the cap.
+function updateOutMeter() {
+  const db = engine.running ? engine.outputDb() : -Infinity;
+  const pct = Number.isFinite(db) ? Math.max(0, Math.min(100, ((db + 80) / 70) * 100)) : 0;
+  $('outBar').style.width = `${pct}%`;
+  $('calibOutBar').style.width = `${pct}%`;
+  if (running && !engine.safetyMuted && !(db > -95)) {
+    if (!silentSince) silentSince = Date.now();
+    if (!silentWarned && Date.now() - silentSince > 10000) {
+      silentWarned = true;
+      log(settings.sound.cap <= 0 ? 'No sound: the volume cap is at zero' : 'No sound is leaving the app', 'alert');
+    }
+  } else {
+    silentSince = 0;
+  }
+}
+setInterval(updateOutMeter, 250);
 
 function watchdog() {
   if (!running) return;
@@ -689,7 +760,7 @@ const GROUPS = [
     title: 'Volume',
     fields: [
       { path: 'sound.cap', label: 'Maximum volume cap', type: 'range', min: 0, max: 100, step: 1, fmt: capLabel,
-        help: 'Nothing can play louder than this. Set it with a sound meter at the bassinet: 50 dBA or less.' },
+        help: 'Nothing can play louder than this. Set it with a sound meter at the bassinet: 45 to 50 dBA at the loudest level, never more.' },
       { path: 'sound.baselineDb', label: 'Baseline loudness', type: 'range', min: -30, max: -6, step: 1,
         fmt: (v) => `${-v} dB below Level 4`, help: 'How much quieter the all-night baseline is than the loudest level.' },
       { custom: 'preview' },
@@ -747,7 +818,7 @@ const GROUPS = [
         ['high', 'High: quieter crying too'],
       ] },
       { path: 'timings.windowsNeeded', label: 'Seconds of crying needed', type: 'range', min: 1, max: 5, step: 1, fmt: (v) => `${v} of the last 5` },
-      { path: 'echoCancellation', label: 'Echo cancellation', type: 'toggle', help: "Removes the app's own sound from the microphone. Applies from the next Start. Try the Phone test to see which setting suits this phone." },
+      { path: 'echoCancellation', label: 'Echo cancellation', type: 'toggle', help: "Removes the app's own sound from the microphone, but on some phones it mutes or reroutes the speaker. Leave off unless the Phone test shows it is safe. Applies from the next Start." },
       { path: 'muteOnSpeakerChange', label: 'Mute if the speaker disconnects', type: 'toggle', help: 'Stops the phone itself from playing next to the baby if Bluetooth drops.' },
     ],
   },
@@ -1055,7 +1126,7 @@ function drawCurve() {
 }
 
 async function exportLog() {
-  const data = await store.exportLog();
+  const data = await store.exportLog({ appVersion: APP_VERSION, settings });
   const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
   const a = el('a', { href: url, download: `hushabye-log-${new Date().toISOString().slice(0, 10)}.json` });
   document.body.append(a);

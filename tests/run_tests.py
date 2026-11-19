@@ -310,6 +310,49 @@ def t_pause(page, base):
     return "crying ignored while paused"
 
 
+def t_sound_out_and_export(page, base):
+    """Defaults are audible, the meter shows it, and the export carries the details."""
+    open_app(page, base, shadow=True)
+    check(hush(page, "h.settings.sound.cap") == 75, "default cap is not 75")
+    start(page)
+    page.wait_for_timeout(5000)
+    out_db = hush(page, "h.engine.outputDb()")
+    check(-50 < out_db < -25, f"baseline output is {out_db:.0f} dB, expected about -40")
+    width = page.evaluate("parseFloat(document.getElementById('outBar').style.width)")
+    check(width > 30, f"sound-out meter shows {width}%")
+    page.click("#startStop")
+    page.wait_for_function("window.__hush.machine.mode === 'idle'")
+    page.click("#settingsBtn")
+    with page.expect_download() as dl:
+        page.click("#settingsForm button:text-is('Export night log')")
+    import json
+    data = json.loads(Path(dl.value.path()).read_text(encoding="utf-8"))
+    diag = [e for e in data["events"] if e.get("kind") == "diag"]
+    check(diag and diag[-1]["data"]["sampleRate"] > 0, "no diagnostics record in the export")
+    check(data["settings"]["sound"]["cap"] == 75, "settings missing from the export")
+    batch = data["scores"][-1]
+    check(len(batch["mic"]) == len(batch["scores"]) == len(batch["out"]), "mic and output levels missing from the export")
+    return f"baseline leaves the app at {out_db:.0f} dB; export has settings, diagnostics and levels"
+
+
+def t_old_defaults_migrate(page, base):
+    """Settings saved by version 1 with the inaudible defaults are moved up; changed ones are kept."""
+    page.goto(f"{base}/tests/unit.html")
+    page.evaluate(
+        """() => localStorage.setItem('hushabye.settings.v1', JSON.stringify({
+            setupDone: true, echoCancellation: true, shadowMode: true,
+            sound: { cap: 40, baselineDb: -20, bpm: 70 },
+        }))"""
+    )
+    page.goto(f"{base}/index.html")
+    check(hush(page, "h.settings.sound.cap") == 75, "old default cap was not raised")
+    check(hush(page, "h.settings.sound.baselineDb") == -20, "a baseline the user chose was overwritten")
+    check(hush(page, "h.settings.sound.bpm") == 70, "other settings were lost")
+    check(hush(page, "h.settings.echoCancellation") is False, "echo cancellation was not switched off")
+    check(hush(page, "h.settings.setupDone") is True, "setup would have to be redone")
+    return "old quiet defaults raised, chosen values kept"
+
+
 def t_no_microphone(page, base):
     open_app(page, base)
     page.click("#startStop")
@@ -396,9 +439,14 @@ def t_music_and_filter(page, base):
 def t_phone_test_page(page, base):
     page.goto(f"{base}/phone-test.html")
     page.click("#go")
-    page.wait_for_timeout(4000)
+    page.wait_for_function("document.getElementById('phase').textContent.includes('Sound only')", timeout=5000)
+    page.wait_for_function("document.getElementById('phase').textContent.includes('Microphone is ON')", timeout=20000)
+    page.wait_for_timeout(5000)
+    page.click("#effect button[data-effect='no change']")
     report = page.evaluate("JSON.parse(document.getElementById('report').textContent)")
     check(report["live"]["windows"] >= 2, "phone test received no microphone audio")
+    check(report["saved"]["micEffect"]["off"] == "no change", "answer to the first check was not saved")
+    check(0.9 < report["live"]["windowsPerSecond"] < 1.1, f"audio clock off: {report['live']['windowsPerSecond']}")
     page.click("#go")
     page.wait_for_function("document.getElementById('go').textContent === 'Start test'")
     return f"{report['live']['windows']} windows received"
@@ -414,6 +462,8 @@ SCENARIOS = [
     ("escalation_and_cap", t_escalation_and_cap, "quiet.wav", True),
     ("shadow_mode", t_shadow_mode, "quiet.wav", True),
     ("pause", t_pause, "quiet.wav", True),
+    ("sound_out_and_export", t_sound_out_and_export, "quiet.wav", True),
+    ("old_defaults_migrate", t_old_defaults_migrate, "quiet.wav", True),
     ("no_microphone", t_no_microphone, None, False),
     ("setup_mic_step", t_setup_mic_step, "quiet.wav", True),
     ("setup_mic_blocked", t_setup_mic_blocked, None, False),

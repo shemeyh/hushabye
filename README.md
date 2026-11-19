@@ -22,8 +22,9 @@ It is one static site with no backend. All audio is processed on the phone; noth
 6. Open **Phone test** (link at the bottom of the app) and run its three checks. They tell you:
    - whether this phone keeps listening with the screen off (if not, leave the screen on and use **Night screen**, which is pure black);
    - whether the browser notices the speaker disconnecting (needed for auto-mute);
-   - whether echo cancellation helps or gets in the way.
-7. Go through the **Setup guide** in the app. It has an **Allow microphone** button; choose Allow when Chrome asks. If Chrome never asks, check two places. In the phone's Settings: Apps, Chrome, Permissions, Microphone must be "Allow only while using the app" (with "Ask every time", Chrome never asks). In Chrome: menu, Settings, Site settings, Microphone, then allow the site. The volume step plays the loudest level so you can lower the cap until a sound meter at the baby's position reads 50 dBA or less. Aim for 45 to 50: phone meters are approximate, and deep rumble reads lower in dBA than it really is.
+   - whether switching the microphone on changes, moves or silences the sound (the first check);
+   - whether echo cancellation helps or gets in the way. It is off by default, because on some phones it reroutes playback.
+7. Go through the **Setup guide** in the app. It has an **Allow microphone** button; choose Allow when Chrome asks. If Chrome never asks, check two places. In the phone's Settings: Apps, Chrome, Permissions, Microphone must be "Allow only while using the app" (with "Ask every time", Chrome never asks). In Chrome: menu, Settings, Site settings, Microphone, then allow the site. The volume step plays the loudest level so you can move the cap until a sound meter at the baby's position reads 45 to 50 dBA, never more. If you hear nothing, or cannot reach 45 with the cap at 100%, turn up the phone's media volume or the speaker and set the cap again. Phone meters are approximate, and deep rumble reads lower in dBA than it really is.
 8. Press **Start**. Turn the phone's screen brightness to minimum and tap **Night screen**.
 
 **First nights:** shadow mode is on by default. The app plays the baseline, listens, and logs what it would have done, without raising the volume. Compare the log with what really happened, then turn shadow mode off in Settings.
@@ -83,7 +84,8 @@ With a cap this low, expect a gentler effect than a commercial responsive bassin
 - **Speaker disconnects:** if the browser reports a change in audio outputs, the sound is muted and a banner asks you to check. Otherwise a dropped Bluetooth link would move the sound to the phone, right beside the baby. Whether Chrome reports this depends on the phone: check with Phone test B.
 - **Audio interrupted** (a call, another app): the app tries to resume and writes it in the log.
 - **Screen:** a wake lock keeps the screen on; it is re-acquired when you come back to the page.
-- **Log:** events and one cry score per second are kept for 7 nights on the phone and can be exported from Settings. No audio is stored.
+- **Sound out meter:** shows what the app is sending to the speaker. If it moves and you hear nothing, the problem is between the phone and the speaker.
+- **Log:** events, and per second the cry score, room level and output level, are kept for 7 nights on the phone and can be exported from Settings together with the settings and audio details. No audio is stored.
 
 ## Publishing on GitHub Pages
 

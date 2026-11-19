@@ -36,6 +36,10 @@
 
     <section class="meters" aria-label="Listening">
       <div class="meter-row">
+        <span class="meter-label">Sound out</span>
+        <div class="bar"><div class="fill out" id="outBar"></div></div>
+      </div>
+      <div class="meter-row">
         <span class="meter-label">Room sound</span>
         <div class="bar"><div class="fill" id="micBar"></div></div>
       </div>
@@ -115,9 +119,10 @@
         <ol>
           <li>Open a free sound-meter app on a second phone, set to <strong>dBA</strong> (A-weighted).</li>
           <li>Hold it where the baby's head will be.</li>
-          <li>Play the loudest level and lower the cap until the meter reads <strong>50 dBA or less</strong>.</li>
+          <li>Play the loudest level and move the cap until the meter reads <strong>45 to 50 dBA</strong>. Never more than 50.</li>
         </ol>
-        <p class="hint">Aim for 45 to 50. Phone meters are approximate, and deep rumble reads lower in dBA than it really is. 50 dBA is the limit hospital nurseries use.</p>
+        <p class="hint">You should clearly hear a rumble with a soft shush on top, coming from the speaker. If you hear nothing, or cannot reach 45 with the cap at 100%, turn up the phone's media volume or the speaker, then set the cap again.</p>
+        <p class="hint">Phone meters are approximate, and deep rumble reads lower in dBA than it really is. 50 dBA is the limit hospital nurseries use.</p>
         <div class="calib">
           <div class="row">
             <button type="button" id="calibLoud" aria-pressed="false">Play loudest level</button>
@@ -127,6 +132,11 @@
             <span class="field-head"><span>Maximum volume cap</span><output id="calibCapOut"></output></span>
             <input type="range" id="calibCap" min="0" max="100" step="1">
           </label>
+          <div class="meter-row">
+            <span class="meter-label">Sound out</span>
+            <div class="bar"><div class="fill out" id="calibOutBar"></div></div>
+          </div>
+          <p class="hint">If this bar moves but you hear nothing, the sound is leaving the app and getting lost on the way to the speaker: check the Bluetooth connection and both volumes.</p>
         </div>
         <p class="hint">No level, music or voice can go above this cap. If you change the phone or speaker volume later, do this step again.</p>
       </section>

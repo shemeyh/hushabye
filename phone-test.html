@@ -28,7 +28,7 @@
 
     <section class="group">
       <h3>Options for this run</h3>
-      <label class="field toggle"><span>Echo cancellation</span><input type="checkbox" id="optEc" checked></label>
+      <label class="field toggle"><span>Echo cancellation</span><input type="checkbox" id="optEc"></label>
       <label class="field toggle"><span>Keep the screen on (wake lock)</span><input type="checkbox" id="optWake"></label>
       <label class="field toggle"><span><span>Play through an audio element</span><small>May survive screen-off better on some phones</small></span><input type="checkbox" id="optElement"></label>
       <label class="field">
@@ -47,6 +47,24 @@
         <tr><td>Echo cancellation actually on</td><td id="rEc">-</td></tr>
         <tr><td>Screen wake lock</td><td id="rWake">-</td></tr>
         <tr><td>Sound outputs seen</td><td id="rOut">-</td></tr>
+      </table>
+    </section>
+
+    <section class="group">
+      <h3>First check: sound and microphone together</h3>
+      <p>Every run plays sound alone for 8 seconds and then switches the microphone on. Stand by the speaker and listen for a change at that moment, then tap what you heard.</p>
+      <p id="phase"><strong>Not running.</strong></p>
+      <div class="row" id="effect">
+        <button type="button" data-effect="no change">No change</button>
+        <button type="button" data-effect="quieter or thinner">Quieter or thinner</button>
+        <button type="button" data-effect="moved to the phone">Moved to the phone</button>
+        <button type="button" data-effect="went silent">Went silent</button>
+        <button type="button" data-effect="never heard any sound">Never heard any sound</button>
+      </div>
+      <table class="t-table">
+        <tr><td>Your answer, echo cancellation off</td><td id="eOff">-</td></tr>
+        <tr><td>Your answer, echo cancellation on</td><td id="eOn">-</td></tr>
+        <tr><td>Audio clock speed</td><td id="eClock">-</td></tr>
       </table>
     </section>
 
@@ -83,9 +101,9 @@
     <section class="group">
       <h3>Test C: echo cancellation</h3>
       <ol>
-        <li>Keep the room quiet. Run the test for 20 seconds with echo cancellation on, and press Stop.</li>
-        <li>Run it again for 20 seconds with echo cancellation off.</li>
-        <li>Also listen: when the test starts, does the speaker get quieter, thinner, or move to the phone?</li>
+        <li>Keep the room quiet. Run the test for 30 seconds with echo cancellation off, and press Stop.</li>
+        <li>Run it again for 30 seconds with echo cancellation on.</li>
+        <li>Answer the first check both times.</li>
       </ol>
       <table class="t-table">
         <tr><td>Microphone level, echo cancellation on</td><td id="cOn">-</td></tr>
@@ -113,6 +131,8 @@
 
     let ctx = null, stream = null, node = null, gain = null, outEl = null, wake = null, timer = null;
     let run = null;
+    let lastEc = null;
+    const SOUND_ONLY_MS = 8000;
 
     function newRun() {
       return {
@@ -145,6 +165,7 @@
 
     async function start() {
       run = newRun();
+      lastEc = run.ec;
       ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
       ctx.onstatechange = () => {
         if (!run) return;
@@ -170,6 +191,19 @@
         gain.connect(ctx.destination);
       }
       src.start();
+      run.sampleRate = ctx.sampleRate;
+
+      if (run.wakeLock && 'wakeLock' in navigator) await lock();
+      run.outputsAtStart = await outputs();
+      timer = setInterval(render, 500);
+      $('go').textContent = 'Stop test';
+      $('go').classList.remove('primary');
+      render();
+
+      // Sound alone first, so the moment the microphone opens can be heard.
+      const mine = run;
+      await new Promise((r) => setTimeout(r, SOUND_ONLY_MS));
+      if (run !== mine) return;
 
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -188,12 +222,10 @@
       } catch (err) {
         run.micError = err.name || err.message;
       }
-
-      if (run.wakeLock && 'wakeLock' in navigator) await lock();
-      run.outputsAtStart = await outputs();
-      timer = setInterval(render, 500);
-      $('go').textContent = 'Stop test';
-      $('go').classList.remove('primary');
+      if (run !== mine) return;
+      run.micOpenedAt = performance.now();
+      run.lastWindowAt = run.micOpenedAt;
+      run.outputLatency = ctx.outputLatency;
       render();
     }
 
@@ -256,6 +288,8 @@
         hiddenLevelDb: r.hiddenWindows ? Math.round(db(Math.sqrt(r.hiddenPower / r.hiddenWindows))) : null,
         visibleLevelDb: r.visibleWindows ? Math.round(db(Math.sqrt(r.visiblePower / r.visibleWindows))) : null,
         interruptions: r.interruptions, ctxStates: r.ctxStates.slice(-12),
+        sampleRate: r.sampleRate, outputLatency: r.outputLatency ?? null,
+        windowsPerSecond: r.micOpenedAt && r.windows > 3 ? Math.round((r.windows / ((r.lastWindowAt - r.micOpenedAt) / 1000)) * 100) / 100 : null,
         outputsAtStart: r.outputsAtStart, deviceChanges: r.deviceChanges.slice(-8),
       };
     }
@@ -273,6 +307,17 @@
 
     function render() {
       const live = run ? summarise(run) : null;
+
+      // First check
+      const phase = $('phase').firstElementChild;
+      if (!run) phase.textContent = 'Not running.';
+      else if (!run.micOpenedAt) phase.textContent = 'Sound only. Listen...';
+      else phase.textContent = run.micError ? 'The microphone could not be opened.' : 'Microphone is ON now. Did the sound change?';
+      const effect = saved.micEffect || {};
+      $('eOff').textContent = effect.off || '-';
+      $('eOn').textContent = effect.on || '-';
+      const wps = live ? live.windowsPerSecond : saved.last && saved.last.windowsPerSecond;
+      if (wps) verdict($('eClock'), `${Math.round(wps * 100)}% of normal`, Math.abs(wps - 1) < 0.05);
       $('rElapsed').textContent = live ? fmtSec(live.durationSec) : '-';
       $('rLevel').textContent = run ? (run.micError ? 'No microphone (' + run.micError + '). In Chrome: menu, Settings, Site settings, Microphone, allow this site.' : fmtDb(run.levelNow)) : '-';
       $('rCtx').textContent = ctx ? ctx.state : '-';
@@ -335,6 +380,13 @@
       });
     }
 
+    $('effect').addEventListener('click', (e) => {
+      const answer = e.target.dataset && e.target.dataset.effect;
+      if (!answer || lastEc == null) return;
+      saved.micEffect = { ...(saved.micEffect || {}), [lastEc ? 'on' : 'off']: answer };
+      localStorage.setItem(KEY, JSON.stringify(saved));
+      render();
+    });
     $('vol').addEventListener('input', setVolume);
     $('go').addEventListener('click', () => (run ? stop() : start()));
     $('copy').addEventListener('click', async () => {

@@ -10,11 +10,12 @@ const DB_VERSION = 1;
 const KEEP_NIGHTS_MS = 7 * 24 * 3600 * 1000;
 
 export const DEFAULT_SETTINGS = {
+  version: 2,
   setupDone: false,
   sound: { ...DEFAULT_SOUND },
   timings: { ...DEFAULT_TIMINGS },
   sensitivity: 'medium',
-  echoCancellation: true,
+  echoCancellation: false,   // on some phones it reroutes or mutes playback
   shadowMode: true,          // first nights: detect and log only
   muteOnSpeakerChange: true,
   tracksEnabled: false,
@@ -28,6 +29,15 @@ export function loadSettings() {
     saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {};
   } catch (_) {
     saved = {};
+  }
+  if ((saved.version || 1) < 2) {
+    // Version 1 shipped a cap and baseline too quiet to hear on most
+    // speakers, and echo cancellation on. Values still at those old
+    // defaults move to the new ones; anything the user changed is kept.
+    if (saved.sound && saved.sound.cap === 40) delete saved.sound.cap;
+    if (saved.sound && saved.sound.baselineDb === -16) delete saved.sound.baselineDb;
+    delete saved.echoCancellation;
+    saved.version = 2;
   }
   return {
     ...DEFAULT_SETTINGS,
@@ -105,12 +115,12 @@ export async function logScores(row) {
   return tx('scores', 'readwrite', (s) => s.add(row)).catch(() => {});
 }
 
-export async function exportLog() {
+export async function exportLog(extra = {}) {
   const [events, scores] = await Promise.all([
     tx('events', 'readonly', (s) => s.getAll()),
     tx('scores', 'readonly', (s) => s.getAll()),
   ]);
-  return { exportedAt: new Date().toISOString(), events: events || [], scores: scores || [] };
+  return { exportedAt: new Date().toISOString(), ...extra, events: events || [], scores: scores || [] };
 }
 
 export async function recentEvents(limit = 100) {
