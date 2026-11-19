@@ -69,6 +69,7 @@
       <button type="button" id="setupBtn">Setup guide</button>
       <a href="phone-test.html">Phone test</a>
     </footer>
+    <p class="hint version" id="version"></p>
   </main>
 
   <!-- Setup guide -->
@@ -102,6 +103,9 @@
         <div class="calib">
           <button type="button" class="primary" id="micAllow">Allow microphone</button>
           <p class="hint" id="micStatus" role="status"></p>
+          <a class="open-chrome" id="openChrome" hidden>Open this page in Chrome</a>
+          <button type="button" id="micCopy" hidden>Copy details</button>
+          <pre class="diag" id="micDiag" hidden></pre>
         </div>
         <p class="hint">Without the microphone the baseline sound still plays, but crying is not detected.</p>
       </section>

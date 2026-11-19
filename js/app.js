@@ -9,6 +9,9 @@ import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
 
+// Shown at the bottom of the page. Keep in step with VERSION in sw.js.
+const APP_VERSION = 3;
+
 let settings = store.loadSettings();
 const engine = new SoundEngine(settings.sound);
 let detector = null;
@@ -346,8 +349,47 @@ async function retryMic() {
 // ------------------------------------------------- microphone permission
 
 const MIC_BLOCKED =
-  'Chrome is blocking the microphone for this site, so it cannot ask again. Open the Chrome menu (three dots), then Settings, Site settings, Microphone. Tap this site under "Blocked" and choose Allow.';
-const MIC_ANDROID = "Also check the phone's own Settings: Apps, Chrome, Permissions, Microphone.";
+  'Chrome is blocking the microphone for this site, so it cannot ask again. Open the Chrome menu (three dots), then Settings, Site settings, Microphone. Tap this site under "Blocked" and choose Allow. If the site is not listed there: Site settings, All sites, find this site and tap "Clear & reset".';
+const MIC_IN_APP =
+  "This page is open inside another app's built-in browser, which cannot use the microphone. Tap \"Open this page in Chrome\" below.";
+
+let micDiagText = '';
+const hasMicApi = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+const isAndroid = () => /Android/i.test(navigator.userAgent);
+// Android WebViews carry a "wv" token; a few well-known in-app browsers name themselves.
+const inAppBrowser = () => /\bwv\b|FBAN|FBAV|Instagram|Line\//.test(navigator.userAgent);
+
+/** Everything needed to work out why the microphone will not open. */
+async function micDiagnostics(err, ms) {
+  let inputs = 'unknown';
+  try {
+    inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput').length;
+  } catch (_) { /* no device list */ }
+  let policy = 'unknown';
+  try {
+    policy = document.featurePolicy.allowsFeature('microphone');
+  } catch (_) { /* older browser */ }
+  let framed = true;
+  try {
+    framed = window.top !== window;
+  } catch (_) { /* cross-origin parent */ }
+  return [
+    `app version: ${APP_VERSION}`,
+    `result: ${err ? `${err.name}: ${err.message}` : 'microphone opened'}`,
+    `answered after: ${ms} ms`,
+    `permission state: ${await micPermission()}`,
+    `secure page: ${window.isSecureContext}`,
+    `microphone API present: ${hasMicApi()}`,
+    `allowed by page policy: ${policy}`,
+    `microphones found: ${inputs}`,
+    `inside another app's browser: ${inAppBrowser()}`,
+    `home-screen app: ${matchMedia('(display-mode: standalone)').matches}`,
+    `inside a frame: ${framed}`,
+    `browser: ${navigator.userAgent}`,
+  ].join('\n');
+}
+const MIC_ANDROID =
+  'Also check the phone\'s own Settings: Apps, Chrome, Permissions, Microphone, and choose "Allow only while using the app". With "Ask every time", Chrome never gets to ask.';
 
 async function micPermission() {
   try {
@@ -359,7 +401,8 @@ async function micPermission() {
 
 /** A plain-language reason for a failed microphone request, with the fix. */
 async function micProblem(err) {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if (inAppBrowser()) return MIC_IN_APP;
+  if (!hasMicApi()) {
     return 'This page cannot use a microphone here. Open it in Chrome itself (not inside another app), at its https address.';
   }
   const name = err && err.name;
@@ -386,18 +429,44 @@ async function refreshMicStatus(problem) {
   if (granted) status.textContent = 'All set: the microphone is allowed.';
   else if (problem) status.textContent = problem;
   else if (state === 'denied') status.textContent = `${MIC_BLOCKED} ${MIC_ANDROID} Then come back and tap the button.`;
+  else if (inAppBrowser()) status.textContent = MIC_IN_APP;
   else status.textContent = 'Tap the button, then choose Allow when Chrome asks.';
+
+  // After a failure, or inside another app's browser, offer the way out.
+  const failed = !granted && (!!problem || inAppBrowser() || !hasMicApi());
+  const link = $('openChrome');
+  link.hidden = !(failed && isAndroid());
+  link.href = `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;end`;
+  $('micDiag').textContent = micDiagText;
+  $('micDiag').hidden = $('micCopy').hidden = !(failed && micDiagText);
 }
 
 async function requestMic() {
+  const began = performance.now();
+  let error = null;
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unavailable');
+    if (!hasMicApi()) throw new Error('This browser has no microphone API on this page');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => t.stop());
-    await refreshMicStatus();
   } catch (err) {
-    await refreshMicStatus(await micProblem(err));
+    error = err;
   }
+  micDiagText = await micDiagnostics(error, Math.round(performance.now() - began));
+  await refreshMicStatus(error ? await micProblem(error) : undefined);
+}
+
+async function copyMicDetails() {
+  try {
+    await navigator.clipboard.writeText(micDiagText);
+    $('micCopy').textContent = 'Copied';
+  } catch (_) {
+    const range = document.createRange();
+    range.selectNodeContents($('micDiag'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    $('micCopy').textContent = 'Selected: now copy';
+  }
+  setTimeout(() => ($('micCopy').textContent = 'Copy details'), 2500);
 }
 
 function onWindow(d) {
@@ -602,6 +671,7 @@ $('setupBack').addEventListener('click', async () => {
 });
 
 $('micAllow').addEventListener('click', requestMic);
+$('micCopy').addEventListener('click', copyMicDetails);
 $('calibLoud').addEventListener('click', () => setPreview(preview === 4 ? null : 4));
 $('calibBase').addEventListener('click', () => setPreview(preview === 0 ? null : 0));
 $('calibCap').addEventListener('input', (e) => {
@@ -1056,6 +1126,7 @@ $('settingsClose').addEventListener('click', async () => {
   $('settings').hidden = true;
 });
 
+$('version').textContent = `Version ${APP_VERSION}`;
 restoreLog();
 render();
 if (!settings.setupDone) openSetup(0);

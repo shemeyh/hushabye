@@ -14,7 +14,7 @@ It is one static site with no backend. All audio is processed on the phone; noth
 
 ## Setting up the phone and speaker
 
-1. Open the site in Chrome on the Android phone. It must be served over HTTPS (GitHub Pages is fine), or the microphone will not work. Optionally use Chrome's menu, "Add to Home screen".
+1. Open the site in Chrome on the Android phone, by typing the address into Chrome itself. A link tapped inside another app often opens in that app's built-in browser, which cannot use the microphone. It must be served over HTTPS (GitHub Pages is fine), or the microphone will not work. Optionally use Chrome's menu, "Add to Home screen".
 2. Load the page once while online. After that it works offline, so the phone can be in airplane mode with Bluetooth on.
 3. Turn on **Do Not Disturb**, or calls and notifications will play through the speaker.
 4. Connect the JBL speaker, plug both phone and speaker into power, and put the speaker at least 2 m from the bassinet.
@@ -23,7 +23,7 @@ It is one static site with no backend. All audio is processed on the phone; noth
    - whether this phone keeps listening with the screen off (if not, leave the screen on and use **Night screen**, which is pure black);
    - whether the browser notices the speaker disconnecting (needed for auto-mute);
    - whether echo cancellation helps or gets in the way.
-7. Go through the **Setup guide** in the app. It has an **Allow microphone** button; choose Allow when Chrome asks. If Chrome never asks, the microphone is blocked: Chrome menu, Settings, Site settings, Microphone, then allow the site. The volume step plays the loudest level so you can lower the cap until a sound meter at the baby's position reads 50 dBA or less. Aim for 45 to 50: phone meters are approximate, and deep rumble reads lower in dBA than it really is.
+7. Go through the **Setup guide** in the app. It has an **Allow microphone** button; choose Allow when Chrome asks. If Chrome never asks, check two places. In the phone's Settings: Apps, Chrome, Permissions, Microphone must be "Allow only while using the app" (with "Ask every time", Chrome never asks). In Chrome: menu, Settings, Site settings, Microphone, then allow the site. The volume step plays the loudest level so you can lower the cap until a sound meter at the baby's position reads 50 dBA or less. Aim for 45 to 50: phone meters are approximate, and deep rumble reads lower in dBA than it really is.
 8. Press **Start**. Turn the phone's screen brightness to minimum and tap **Night screen**.
 
 **First nights:** shadow mode is on by default. The app plays the baseline, listens, and logs what it would have done, without raising the volume. Compare the log with what really happened, then turn shadow mode off in Settings.
@@ -93,7 +93,7 @@ The folder is the site; there is no build step.
 2. In the repository: Settings, Pages, "Deploy from a branch", branch `main`, folder `/ (root)`.
 3. Open `https://<user>.github.io/<repo>/` on the phone.
 
-After changing files, bump `VERSION` in `sw.js` so phones pick up the new version.
+After changing files, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js`. Phones then pick up the new version on the next reload; the version number is shown at the bottom of the app.
 
 ## Tests
 

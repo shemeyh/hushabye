@@ -170,6 +170,13 @@ button.primary, button[aria-pressed="true"] {
 .step .hint { margin-top: 14px; }
 .calib .hint { margin: 0; }
 .hint.ok { color: var(--calm); }
+.diag { white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; color: var(--dim); margin: 0; }
+.open-chrome {
+  display: block; text-align: center; text-decoration: none; font-weight: 600;
+  color: var(--accent-ink); background: var(--accent);
+  border-radius: 10px; padding: 12px 14px;
+}
+.version { text-align: center; margin: 0; font-size: 0.75rem; }
 #settingsForm { display: flex; flex-direction: column; gap: 16px; }
 .field > select { width: 100%; }
 .steps { display: flex; gap: 6px; }

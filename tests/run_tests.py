@@ -326,6 +326,7 @@ def t_setup_mic_step(page, base):
     page.click("#setupNext")
     page.click("#setupNext")
     page.wait_for_selector("#micAllow", state="visible")
+    page.wait_for_function("document.getElementById('micStatus').textContent.length > 0")
     if page.is_enabled("#micAllow"):  # already allowed in this browser: nothing to tap
         page.click("#micAllow")
     page.wait_for_function("document.getElementById('micStatus').textContent.includes('allowed')", timeout=15000)
@@ -339,9 +340,28 @@ def t_setup_mic_blocked(page, base):
     page.click("#setupNext")
     page.click("#micAllow")
     page.wait_for_function("document.getElementById('micStatus').textContent.includes('Settings')", timeout=15000)
+    diag = page.inner_text("#micDiag")
+    check("NotAllowedError" in diag and "permission state" in diag, "no diagnostics after a failure: " + diag[:80])
+    check(page.is_visible("#micCopy"), "no copy button for the diagnostics")
     page.click("#setupNext")  # setup can still be finished without a microphone
     page.wait_for_selector("#calibCap", state="visible")
     return "blocked microphone gets instructions"
+
+
+def t_in_app_browser(page, base):
+    """A phone opening the page inside another app's WebView gets a way out."""
+    ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36"
+    ctx = page.context.browser.new_context(user_agent=ua, viewport={"width": 412, "height": 915})
+    p2 = ctx.new_page()
+    p2.goto(f"{base}/index.html")
+    p2.click("#setupNext")
+    p2.click("#setupNext")
+    p2.wait_for_selector("#openChrome", state="visible")
+    href = p2.get_attribute("#openChrome", "href")
+    check(href.startswith("intent://") and "package=com.android.chrome" in href, "bad Chrome link: " + href)
+    check("another app" in p2.inner_text("#micStatus"), "in-app browser not explained")
+    ctx.close()
+    return "in-app browser is explained, with an Open in Chrome link"
 
 
 def t_music_and_filter(page, base):
@@ -397,6 +417,7 @@ SCENARIOS = [
     ("no_microphone", t_no_microphone, None, False),
     ("setup_mic_step", t_setup_mic_step, "quiet.wav", True),
     ("setup_mic_blocked", t_setup_mic_blocked, None, False),
+    ("in_app_browser", t_in_app_browser, None, False),
     ("music_and_filter", t_music_and_filter, "quiet.wav", True),
     ("phone_test_page", t_phone_test_page, "quiet.wav", True),
 ]
