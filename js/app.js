@@ -10,7 +10,7 @@ import * as store from './store.js';
 const $ = (id) => document.getElementById(id);
 
 // Shown at the bottom of the page. Keep in step with VERSION in sw.js.
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 let settings = store.loadSettings();
 const engine = new SoundEngine(settings.sound);
@@ -36,6 +36,10 @@ let detectorEngine = 'none';
 let bannerHandler = null;
 let recordingMuted = false;
 let clockWarned = false;
+let micSilent = 0;        // consecutive windows of pure digital silence
+let deafSince = 0;        // when listening was lost, or 0
+let reconnecting = false;
+let lastReconnect = 0;
 let silentSince = 0;
 let silentWarned = false;
 
@@ -173,7 +177,7 @@ function render() {
       if (shadow && machine.level > 0) line = `Shadow: would be at ${LEVEL_NAMES[machine.level]}`;
       else if (machine.sustained) line = 'Crying detected';
       else if (machine.level > 0) line = 'Calming down';
-      else line = micOk ? 'Listening' : 'Playing (not listening)';
+      else line = micOk && micSilent < 5 ? 'Listening' : 'Playing, NOT listening';
     }
   }
   $('levelName').textContent = name;
@@ -259,6 +263,7 @@ async function start() {
     vt = 0;
     lastReal = lastWindowReal = performance.now();
     interrupted = stalled = false;
+    micSilent = deafSince = lastReconnect = 0;
     lastScore = 0;
     clockWarned = silentWarned = false;
     silentSince = 0;
@@ -323,8 +328,10 @@ async function startDetector() {
   detector.addEventListener('micended', () => {
     if (!running) return;
     micOk = false;
-    log('The microphone stopped', 'alert');
-    showBanner('The microphone stopped, so crying is no longer detected. Stop and Start again to reconnect it.', 'OK', hideBanner);
+    if (!deafSince) deafSince = Date.now();
+    log('The phone took the microphone away: crying is not being detected', 'alert');
+    if (document.visibilityState === 'visible') reconnectMic();
+    render();
   });
   try {
     await detector.start(engine.ctx);
@@ -482,6 +489,7 @@ function onWindow(d) {
   lastReal = lastWindowReal = now;
   lastScore = simCrying ? 1 : d.score;
   lastThreshold = d.threshold;
+  noteMicLevel(d.levelDb);
   dispatch({ type: 'window', crying: simCrying || d.crying, t: vt });
   if (scoreBatch) {
     if (!scoreBatch.scores.length) scoreBatch.at = Date.now() - 1000;
@@ -491,6 +499,53 @@ function onWindow(d) {
     scoreBatch.out.push(Math.round(Math.max(-120, engine.outputDb()))); // sound leaving the app
     scoreBatch.engine = d.engine;
     if (scoreBatch.scores.length >= 60) flushScores();
+  }
+}
+
+// Android cuts the microphone (pure digital silence, or a dead track) within
+// seconds of the screen going off or another app coming to the front, and
+// does not give it back by itself. Notice it, say so, and reconnect as soon
+// as the page is on screen again.
+function noteMicLevel(levelDb) {
+  if (!micOk) return;
+  if (levelDb > -150) {
+    micSilent = 0;
+    return;
+  }
+  micSilent++;
+  if (micSilent === 5) {
+    if (!deafSince) deafSince = Date.now();
+    log('The phone has silenced the microphone: crying is not being detected', 'alert');
+  }
+  if (micSilent >= 5 && document.visibilityState === 'visible') reconnectMic();
+}
+
+async function reconnectMic(force = false) {
+  if (!running || reconnecting) return;
+  if (!force && Date.now() - lastReconnect < 20000) return;
+  reconnecting = true;
+  lastReconnect = Date.now();
+  try {
+    clearInterval(fallbackTimer);
+    if (detector) await detector.stop().catch(() => {});
+    detector = null;
+    micSilent = 0;
+    await startDetector();
+    if (micOk) {
+      log('Microphone reconnected: listening again');
+      if (deafSince) {
+        const mins = Math.max(1, Math.round((Date.now() - deafSince) / 60000));
+        showBanner(
+          `Listening was off for about ${mins} min, because the screen was off or another app was in front. Keep Hushabye on screen all night: use Night screen, not the power button.`,
+          'OK',
+          hideBanner,
+        );
+      }
+      deafSince = 0;
+    }
+  } finally {
+    reconnecting = false;
+    render();
   }
 }
 
@@ -611,8 +666,9 @@ document.addEventListener('visibilitychange', () => {
     log('Back on screen');
     acquireWakeLock();
     engine.resume();
+    if (!micOk || micSilent >= 3 || deafSince) reconnectMic(true);
   } else {
-    log('Screen off or app in the background');
+    log('Screen off or app in the background: listening will stop', 'alert');
   }
 });
 

@@ -353,6 +353,28 @@ def t_old_defaults_migrate(page, base):
     return "old quiet defaults raised, chosen values kept"
 
 
+def t_mic_taken_away(page, base):
+    """If the phone kills the microphone, the app reconnects it and says so."""
+    open_app(page, base, "?model=off")
+    start(page)
+    page.wait_for_timeout(2500)
+    page.evaluate(
+        """() => {
+            window.__firstDetector = window.__hush.detector;
+            const track = window.__hush.detector.stream.getAudioTracks()[0];
+            track.stop();
+            track.dispatchEvent(new Event('ended'));
+        }"""
+    )
+    page.wait_for_function("window.__hush.detector && window.__hush.detector !== window.__firstDetector && window.__hush.detector.stream", timeout=15000)
+    page.wait_for_selector("#banner", state="visible")
+    check("Listening was off" in page.inner_text("#bannerText"), "no notice that listening was lost")
+    check("Microphone reconnected" in page.inner_text("#log"), "reconnect not logged")
+    page.evaluate("window.__n = 0; window.__hush.detector.addEventListener('window', () => window.__n++)")
+    page.wait_for_function("window.__n >= 2", timeout=10000)
+    return "microphone reconnected and windows flowing again"
+
+
 def t_no_microphone(page, base):
     open_app(page, base)
     page.click("#startStop")
@@ -464,6 +486,7 @@ SCENARIOS = [
     ("pause", t_pause, "quiet.wav", True),
     ("sound_out_and_export", t_sound_out_and_export, "quiet.wav", True),
     ("old_defaults_migrate", t_old_defaults_migrate, "quiet.wav", True),
+    ("mic_taken_away", t_mic_taken_away, "quiet.wav", True),
     ("no_microphone", t_no_microphone, None, False),
     ("setup_mic_step", t_setup_mic_step, "quiet.wav", True),
     ("setup_mic_blocked", t_setup_mic_blocked, None, False),
