@@ -23,7 +23,7 @@ It is one static site with no backend. All audio is processed on the phone; noth
    - whether this phone keeps listening with the screen off (if not, leave the screen on and use **Night screen**, which is pure black);
    - whether the browser notices the speaker disconnecting (needed for auto-mute);
    - whether echo cancellation helps or gets in the way.
-7. Go through the **Setup guide** in the app. Step 3 plays the loudest level so you can lower the cap until a sound meter at the baby's position reads 50 dBA or less. Aim for 45 to 50: phone meters are approximate, and deep rumble reads lower in dBA than it really is.
+7. Go through the **Setup guide** in the app. It has an **Allow microphone** button; choose Allow when Chrome asks. If Chrome never asks, the microphone is blocked: Chrome menu, Settings, Site settings, Microphone, then allow the site. The volume step plays the loudest level so you can lower the cap until a sound meter at the baby's position reads 50 dBA or less. Aim for 45 to 50: phone meters are approximate, and deep rumble reads lower in dBA than it really is.
 8. Press **Start**. Turn the phone's screen brightness to minimum and tap **Night screen**.
 
 **First nights:** shadow mode is on by default. The app plays the baseline, listens, and logs what it would have done, without raising the volume. Compare the log with what really happened, then turn shadow mode off in Settings.

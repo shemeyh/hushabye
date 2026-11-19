@@ -186,7 +186,7 @@
         mic.connect(node); node.connect(sink); sink.connect(ctx.destination);
         node.port.onmessage = (e) => onMessage(e.data);
       } catch (err) {
-        run.micError = err.message;
+        run.micError = err.name || err.message;
       }
 
       if (run.wakeLock && 'wakeLock' in navigator) await lock();
@@ -274,7 +274,7 @@
     function render() {
       const live = run ? summarise(run) : null;
       $('rElapsed').textContent = live ? fmtSec(live.durationSec) : '-';
-      $('rLevel').textContent = run ? (run.micError ? 'No microphone: ' + run.micError : fmtDb(run.levelNow)) : '-';
+      $('rLevel').textContent = run ? (run.micError ? 'No microphone (' + run.micError + '). In Chrome: menu, Settings, Site settings, Microphone, allow this site.' : fmtDb(run.levelNow)) : '-';
       $('rCtx').textContent = ctx ? ctx.state : '-';
       $('rEc').textContent = run ? (run.ecActual == null ? 'unknown' : run.ecActual ? 'yes' : 'no') : '-';
       $('rWake').textContent = run ? (wake ? 'held' : run.wakeLock ? 'not held' : 'off') : '-';

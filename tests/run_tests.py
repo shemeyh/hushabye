@@ -144,7 +144,7 @@ def hush(page, expr):
 
 def open_app(page, base, query="", shadow=False, fast=False):
     page.goto(f"{base}/index.html{query}")
-    for _ in range(4):  # walk through the setup guide
+    for _ in range(5):  # walk through the setup guide
         page.click("#setupNext")
     page.wait_for_selector("#setup", state="hidden")
     hush(page, f"h.applySetting('shadowMode', {str(shadow).lower()})")
@@ -316,7 +316,32 @@ def t_no_microphone(page, base):
     page.wait_for_selector("#banner", state="visible", timeout=20000)
     check(hush(page, "h.engine.running"), "sound is not playing without a microphone")
     check(hush(page, "h.machine.mode") == "running", "not running")
-    return "baseline plays, banner shown"
+    check(page.inner_text("#bannerAction") == "Try again", "no retry button")
+    check("Allow" in page.inner_text("#bannerText"), "banner does not say how to allow the microphone")
+    return "baseline plays, banner explains and offers a retry"
+
+
+def t_setup_mic_step(page, base):
+    page.goto(f"{base}/index.html")
+    page.click("#setupNext")
+    page.click("#setupNext")
+    page.wait_for_selector("#micAllow", state="visible")
+    if page.is_enabled("#micAllow"):  # already allowed in this browser: nothing to tap
+        page.click("#micAllow")
+    page.wait_for_function("document.getElementById('micStatus').textContent.includes('allowed')", timeout=15000)
+    check(page.is_disabled("#micAllow"), "button still active after allowing")
+    return "setup step requests and confirms the microphone"
+
+
+def t_setup_mic_blocked(page, base):
+    page.goto(f"{base}/index.html")
+    page.click("#setupNext")
+    page.click("#setupNext")
+    page.click("#micAllow")
+    page.wait_for_function("document.getElementById('micStatus').textContent.includes('Settings')", timeout=15000)
+    page.click("#setupNext")  # setup can still be finished without a microphone
+    page.wait_for_selector("#calibCap", state="visible")
+    return "blocked microphone gets instructions"
 
 
 def t_music_and_filter(page, base):
@@ -370,6 +395,8 @@ SCENARIOS = [
     ("shadow_mode", t_shadow_mode, "quiet.wav", True),
     ("pause", t_pause, "quiet.wav", True),
     ("no_microphone", t_no_microphone, None, False),
+    ("setup_mic_step", t_setup_mic_step, "quiet.wav", True),
+    ("setup_mic_blocked", t_setup_mic_blocked, None, False),
     ("music_and_filter", t_music_and_filter, "quiet.wav", True),
     ("phone_test_page", t_phone_test_page, "quiet.wav", True),
 ]

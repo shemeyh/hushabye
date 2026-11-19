@@ -1,6 +1,6 @@
 // Offline support: everything the app needs is cached on first visit, so it
 // keeps working in airplane mode. Bump VERSION when files change.
-const VERSION = 'hushabye-v1';
+const VERSION = 'hushabye-v2';
 const CORE = [
   './', 'index.html', 'phone-test.html', 'manifest.webmanifest',
   'css/app.css',
@@ -15,7 +15,7 @@ const CORE = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE.map((url) => new Request(url, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

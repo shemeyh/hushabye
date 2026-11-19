@@ -168,6 +168,8 @@ button.primary, button[aria-pressed="true"] {
 .step p { margin: 0 0 10px; }
 .hint { color: var(--dim); font-size: 0.9rem; }
 .step .hint { margin-top: 14px; }
+.calib .hint { margin: 0; }
+.hint.ok { color: var(--calm); }
 #settingsForm { display: flex; flex-direction: column; gap: 16px; }
 .field > select { width: 100%; }
 .steps { display: flex; gap: 6px; }

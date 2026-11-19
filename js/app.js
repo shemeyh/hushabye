@@ -324,13 +324,79 @@ async function startDetector() {
     detector = null;
     micOk = false;
     detectorEngine = 'none';
-    log('Microphone unavailable: ' + err.message, 'alert');
-    showBanner('The microphone is not available, so crying cannot be detected. The baseline sound keeps playing.', 'OK', hideBanner);
+    log('Microphone unavailable (' + (err.name || err.message) + ')', 'alert');
+    showBanner(`Crying cannot be detected. ${await micProblem(err)} The baseline sound keeps playing.`, 'Try again', retryMic);
     // Keep the clock ticking so pause, test mode and the log still work.
     fallbackTimer = setInterval(
       () => onWindow({ score: 0, crying: false, threshold: lastThreshold, levelDb: -120, engine: 'none' }),
       1000,
     );
+  }
+}
+
+async function retryMic() {
+  if (!running) return;
+  clearInterval(fallbackTimer);
+  hideBanner();
+  await startDetector();
+  if (micOk) log('Microphone connected');
+  render();
+}
+
+// ------------------------------------------------- microphone permission
+
+const MIC_BLOCKED =
+  'Chrome is blocking the microphone for this site, so it cannot ask again. Open the Chrome menu (three dots), then Settings, Site settings, Microphone. Tap this site under "Blocked" and choose Allow.';
+const MIC_ANDROID = "Also check the phone's own Settings: Apps, Chrome, Permissions, Microphone.";
+
+async function micPermission() {
+  try {
+    return (await navigator.permissions.query({ name: 'microphone' })).state;
+  } catch (_) {
+    return 'unknown';
+  }
+}
+
+/** A plain-language reason for a failed microphone request, with the fix. */
+async function micProblem(err) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return 'This page cannot use a microphone here. Open it in Chrome itself (not inside another app), at its https address.';
+  }
+  const name = err && err.name;
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    const state = await micPermission();
+    if (state === 'denied') return `${MIC_BLOCKED} ${MIC_ANDROID}`;
+    return `The microphone was not allowed. Try again and choose Allow when Chrome asks. If no question appears: ${MIC_ANDROID}`;
+  }
+  if (name === 'NotFoundError') return 'No microphone was found on this device.';
+  if (name === 'NotReadableError' || name === 'AbortError') {
+    return 'Another app is using the microphone. Close any call, recorder or voice assistant, then try again.';
+  }
+  return `The microphone could not be opened${err && err.message ? ` (${err.message})` : ''}.`;
+}
+
+async function refreshMicStatus(problem) {
+  const state = await micPermission();
+  const status = $('micStatus');
+  const btn = $('micAllow');
+  const granted = state === 'granted' && !problem;
+  btn.disabled = granted;
+  btn.textContent = granted ? 'Microphone allowed' : 'Allow microphone';
+  status.classList.toggle('ok', granted);
+  if (granted) status.textContent = 'All set: the microphone is allowed.';
+  else if (problem) status.textContent = problem;
+  else if (state === 'denied') status.textContent = `${MIC_BLOCKED} ${MIC_ANDROID} Then come back and tap the button.`;
+  else status.textContent = 'Tap the button, then choose Allow when Chrome asks.';
+}
+
+async function requestMic() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unavailable');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    await refreshMicStatus();
+  } catch (err) {
+    await refreshMicStatus(await micProblem(err));
   }
 }
 
@@ -485,7 +551,9 @@ function syncPreviewButtons() {
 // ----------------------------------------------------------- setup guide
 
 let setupStep = 0;
-const SETUP_NEXT = ['I understand', 'Next', 'The cap is set', 'Finish'];
+const SETUP_NEXT = ['I understand', 'Next', 'Next', 'The cap is set', 'Finish'];
+const CALIB_STEP = 3;
+const LAST_STEP = 4;
 
 function openSetup(stepIndex) {
   setupStep = stepIndex;
@@ -500,6 +568,7 @@ function renderSetup() {
   [...$('setupDots').children].forEach((d, i) => d.classList.toggle('on', i <= setupStep));
   $('setupNext').textContent = SETUP_NEXT[setupStep];
   $('setupBack').textContent = setupStep === 0 ? 'Close' : 'Back';
+  if (setupStep === 2) refreshMicStatus();
   $('calibCap').value = settings.sound.cap;
   $('calibCapOut').textContent = capLabel(settings.sound.cap);
   syncPreviewButtons();
@@ -511,8 +580,8 @@ async function leaveCalibration() {
 }
 
 $('setupNext').addEventListener('click', async () => {
-  if (setupStep === 2) await leaveCalibration();
-  if (setupStep < 3) {
+  if (setupStep === CALIB_STEP) await leaveCalibration();
+  if (setupStep < LAST_STEP) {
     setupStep++;
     renderSetup();
     return;
@@ -523,7 +592,7 @@ $('setupNext').addEventListener('click', async () => {
 });
 
 $('setupBack').addEventListener('click', async () => {
-  if (setupStep === 2) await leaveCalibration();
+  if (setupStep === CALIB_STEP) await leaveCalibration();
   if (setupStep === 0) {
     $('setup').hidden = true;
     return;
@@ -532,6 +601,7 @@ $('setupBack').addEventListener('click', async () => {
   renderSetup();
 });
 
+$('micAllow').addEventListener('click', requestMic);
 $('calibLoud').addEventListener('click', () => setPreview(preview === 4 ? null : 4));
 $('calibBase').addEventListener('click', () => setPreview(preview === 0 ? null : 0));
 $('calibCap').addEventListener('input', (e) => {
@@ -834,7 +904,7 @@ async function toggleRecording() {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
     });
   } catch (err) {
-    $('voiceStatus').textContent = 'Microphone unavailable: ' + err.message;
+    $('voiceStatus').textContent = await micProblem(err);
     return;
   }
   // Silence our own output so it does not end up in the recording.

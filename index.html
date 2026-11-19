@@ -74,7 +74,7 @@
   <!-- Setup guide -->
   <div class="sheet" id="setup" hidden>
     <div class="sheet-body">
-      <div class="steps" id="setupDots"><span></span><span></span><span></span><span></span></div>
+      <div class="steps" id="setupDots"><span></span><span></span><span></span><span></span><span></span></div>
 
       <section class="step" data-step="0">
         <h2>Safe sleep comes first</h2>
@@ -97,6 +97,16 @@
       </section>
 
       <section class="step" data-step="2" hidden>
+        <h2>Allow the microphone</h2>
+        <p>Hushabye listens for crying through this phone's microphone. The sound is analysed on the phone and never recorded or sent anywhere.</p>
+        <div class="calib">
+          <button type="button" class="primary" id="micAllow">Allow microphone</button>
+          <p class="hint" id="micStatus" role="status"></p>
+        </div>
+        <p class="hint">Without the microphone the baseline sound still plays, but crying is not detected.</p>
+      </section>
+
+      <section class="step" data-step="3" hidden>
         <h2>Set the volume cap</h2>
         <ol>
           <li>Open a free sound-meter app on a second phone, set to <strong>dBA</strong> (A-weighted).</li>
@@ -117,7 +127,7 @@
         <p class="hint">No level, music or voice can go above this cap. If you change the phone or speaker volume later, do this step again.</p>
       </section>
 
-      <section class="step" data-step="3" hidden>
+      <section class="step" data-step="4" hidden>
         <h2>First nights: shadow mode</h2>
         <p>Shadow mode is on. The app plays the baseline sound, listens, and writes down what it would have done, but it does not raise the volume.</p>
         <p>Check the log in the morning. When the cry detection matches what really happened, turn shadow mode off in Settings.</p>
