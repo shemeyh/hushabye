@@ -1,11 +1,11 @@
 // Offline support: everything the app needs is cached on first visit, so it
 // keeps working in airplane mode. Bump VERSION (and APP_VERSION in js/app.js)
 // when files change.
-const VERSION = 'hushabye-v5';
+const VERSION = 'hushabye-v6';
 const CORE = [
   './', 'index.html', 'phone-test.html', 'manifest.webmanifest',
   'css/app.css',
-  'js/app.js', 'js/state-machine.js', 'js/sound-engine.js', 'js/womb-filter.js',
+  'js/app.js', 'js/state-machine.js', 'js/sound-engine.js', 'js/womb-filter.js', 'js/womb-sounds.js',
   'js/detector.js', 'js/heuristic.js', 'js/dsp.js', 'js/store.js',
   'js/worklets/capture-processor.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',

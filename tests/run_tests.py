@@ -226,6 +226,46 @@ def t_basic_own_sound(page, base):
     return f"top score {max(s):.2f}"
 
 
+OWN_OUTPUT_JS = """async (useModel) => {
+    const h = window.__hush;
+    for (const [k, v] of [['sound.gutVolume', 100], ['sound.thumpVolume', 100], ['sound.breathDepth', 0.6],
+                          ['sound.hrv', 100], ['sound.whooshDepth', 0.8]]) h.applySetting(k, v);
+    await h.engine.start();
+    h.engine.setLevel(4);
+    const dest = h.engine.ctx.createMediaStreamDestination();
+    h.engine.clipper.connect(dest);  // before the cap: as loud as it gets
+    const { CryDetector } = await import('./js/detector.js');
+    const d = new CryDetector({ sensitivity: 'high', useModel });
+    window.__own = [];
+    d.addEventListener('window', (e) => window.__own.push(e.detail));
+    await d.start(h.engine.ctx, dest.stream);
+    window.__ownDetector = d;
+}"""
+
+
+def own_output(page, base, use_model):
+    open_app(page, base)
+    page.evaluate(OWN_OUTPUT_JS, use_model)
+    if use_model:
+        page.wait_for_function("window.__ownDetector.engine === 'yamnet'", timeout=60000)
+        page.evaluate("window.__own.length = 0")
+    page.wait_for_function("window.__own.length >= 45", timeout=90000)
+    got = page.evaluate("window.__own.map((w) => [w.score, w.crying, w.levelDb])")
+    top = max(g[0] for g in got)
+    check(min(g[2] for g in got) > -40, "the detector was not hearing the app's output")
+    check(not any(g[1] for g in got), f"the app's own sound counted as crying (top score {top:.2f})")
+    return top
+
+
+def t_own_output_model(page, base):
+    """Everything the app can play, at full strength, fed straight to YAMNet."""
+    return f"45 s at Level 4, all layers at maximum: top cry score {own_output(page, base, True):.2f}"
+
+
+def t_own_output_basic(page, base):
+    return f"45 s at Level 4, all layers at maximum: top basic score {own_output(page, base, False):.2f}"
+
+
 PEAK_JS = """async () => {
     const e = window.__hush.engine;
     const buf = new Float32Array(e.outAnalyser.fftSize);
@@ -350,6 +390,16 @@ def t_old_defaults_migrate(page, base):
     check(hush(page, "h.settings.sound.bpm") == 70, "other settings were lost")
     check(hush(page, "h.settings.echoCancellation") is False, "echo cancellation was not switched off")
     check(hush(page, "h.settings.setupDone") is True, "setup would have to be redone")
+    page.evaluate(
+        """() => localStorage.setItem('hushabye.settings.v1', JSON.stringify({
+            version: 2, setupDone: true, sound: { cap: 53, tone: 500, bpm: 60 },
+        }))"""
+    )
+    page.reload()
+    check(hush(page, "h.settings.sound.tone") == 300, "old default rumble tone was not retuned")
+    check(hush(page, "h.settings.sound.cap") == 53 and hush(page, "h.settings.sound.bpm") == 60, "chosen values were lost")
+    check(hush(page, "h.settings.sound.gutVolume") == 30, "new settings did not get their defaults")
+    check(hush(page, "h.settings.sound.voiceWomb.cutoff") == 450, "voice filter did not get its defaults")
     return "old quiet defaults raised, chosen values kept"
 
 
@@ -481,6 +531,8 @@ SCENARIOS = [
     ("model_own_sound", t_model_own_sound, "own_sound.wav", True),
     ("basic_synth_cry", t_basic_synth_cry, "cry_synth.wav", True),
     ("basic_own_sound", t_basic_own_sound, "own_sound.wav", True),
+    ("own_output_model", t_own_output_model, "quiet.wav", True),
+    ("own_output_basic", t_own_output_basic, "quiet.wav", True),
     ("escalation_and_cap", t_escalation_and_cap, "quiet.wav", True),
     ("shadow_mode", t_shadow_mode, "quiet.wav", True),
     ("pause", t_pause, "quiet.wav", True),

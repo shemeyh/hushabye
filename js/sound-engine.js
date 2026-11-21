@@ -14,18 +14,26 @@
 // (levels, music, voice, any combination) can push the output above it.
 
 import { createWombChain, DEFAULT_WOMB } from './womb-filter.js';
+import { heartTimeline, breathTimeline, gutLoop } from './womb-sounds.js';
 import { biquadCoeffs, biquadInPlace, clamp, fromDb, makeSeamless, normaliseRms } from './dsp.js';
 
 export const DEFAULT_SOUND = {
   cap: 75,             // 0-100; every 2 points is 1 dB; 100 = full scale
   baselineDb: -12,     // how far below the loudest level the baseline sits
   bpm: 75,             // heartbeat rate of the whoosh
-  whooshDepth: 0.35,   // 0 = steady, 1 = fully pulsing
-  tone: 500,           // rumble low-pass, Hz
+  whooshDepth: 0.25,   // 0 = steady, 1 = fully pulsing
+  hrv: 60,             // 0-100; how irregular the heartbeat is (0 = metronome)
+  thumpVolume: 50,     // 0-100; the two low heart sounds on each beat
+  breathDepth: 0.3,    // 0-0.6; slow swell at breathing pace
+  gutVolume: 30,       // 0-100; occasional low tummy sounds
+  tone: 300,           // rumble low-pass, Hz
   trackVolume: 50,     // 0-100
   voiceVolume: 40,     // 0-100
   voiceGapSec: 8,      // silence between repeats of the voice clip
   womb: { ...DEFAULT_WOMB },
+  // A mother's own voice reaches the baby through her body: louder in the
+  // low end and less muffled than sound from outside.
+  voiceWomb: { cutoff: 450, slope: 6, bodyBoostDb: 5 },
   wombBypass: false,
   outputPath: 'direct', // 'direct' | 'element' (through an <audio> element)
 };
@@ -35,7 +43,7 @@ const NOISE_RMS = 0.16;
 const SHUSH_MIX_AT_TOP = 0.45;
 const TRACK_TARGET_RMS = 0.1;
 const LEVEL_TC = 1.2;      // seconds; time constant of level changes
-const ENV_BPM = 75;
+const BREATHS_PER_MIN = 16;
 
 export function capToGain(cap) {
   if (cap <= 0) return 0;
@@ -67,7 +75,10 @@ function brownNoise(sr, seconds) {
     x[i] = y;
   }
   // Remove what a small speaker cannot reproduce; it only eats headroom.
-  biquadInPlace(x, biquadCoeffs('highpass', 45, sr));
+  // The reference recording has its energy between 80 and 250 Hz, which is
+  // also where a small speaker starts to work.
+  biquadInPlace(x, biquadCoeffs('highpass', 90, sr, 0.5412));
+  biquadInPlace(x, biquadCoeffs('highpass', 90, sr, 1.3066));
   return normaliseRms(makeSeamless(x, fade), NOISE_RMS);
 }
 
@@ -98,8 +109,8 @@ export function heartbeatEnvelope(n) {
   return e;
 }
 
-function toBuffer(ctx, data) {
-  const buf = ctx.createBuffer(1, data.length, ctx.sampleRate);
+function toBuffer(ctx, data, sampleRate = ctx.sampleRate) {
+  const buf = ctx.createBuffer(1, data.length, sampleRate);
   buf.copyToChannel(data, 0);
   return buf;
 }
@@ -114,7 +125,12 @@ function loopSource(ctx, buffer) {
 export class SoundEngine extends EventTarget {
   constructor(options = {}) {
     super();
-    this.options = { ...DEFAULT_SOUND, ...options, womb: { ...DEFAULT_WOMB, ...(options.womb || {}) } };
+    this.options = {
+      ...DEFAULT_SOUND,
+      ...options,
+      womb: { ...DEFAULT_WOMB, ...(options.womb || {}) },
+      voiceWomb: { ...DEFAULT_SOUND.voiceWomb, ...(options.voiceWomb || {}) },
+    };
     this.ctx = null;
     this.level = 0;
     this.tracks = [];
@@ -185,19 +201,27 @@ export class SoundEngine extends EventTarget {
     this.rumbleSrc.connect(this.rumbleLP);
     this.rumbleLP.connect(this.rumbleGain);
     this.shushSrc.connect(this.shushGain);
+    this.breath = ctx.createGain();
     this.rumbleGain.connect(this.whoosh);
     this.shushGain.connect(this.whoosh);
-    this.whoosh.connect(this.mix);
+    this.whoosh.connect(this.breath);
+    this.breath.connect(this.mix);
 
-    // Heartbeat envelope, played as a looping control signal.
-    const envLen = Math.round((sr * 60) / ENV_BPM);
-    this.envSrc = loopSource(ctx, toBuffer(ctx, heartbeatEnvelope(envLen)));
+    // Heartbeat: a control envelope for the whoosh plus the heart sounds
+    // themselves. Heart sounds and tummy sounds join the rumble before its
+    // level gain, so they rise and fall with the levels.
     this.envToWhoosh = ctx.createGain();
     this.envToTone = ctx.createGain();
     this.envToPulse = ctx.createGain();
-    this.envSrc.connect(this.envToWhoosh);
-    this.envSrc.connect(this.envToTone);
-    this.envSrc.connect(this.envToPulse);
+    this.thumpGain = ctx.createGain();
+    this.gutGain = ctx.createGain();
+    this.breathDepth = ctx.createGain();
+    this.thumpGain.connect(this.rumbleGain);
+    this.gutGain.connect(this.rumbleGain);
+    this.breathDepth.connect(this.breath.gain);
+    this._buildHeart();
+    this._buildBreath();
+    this._buildGut();
     this.envToWhoosh.connect(this.whoosh.gain);
     this.envToTone.connect(this.rumbleLP.frequency); // each surge is a little brighter
 
@@ -213,7 +237,7 @@ export class SoundEngine extends EventTarget {
     this.trackLeveler.connect(this.trackGain);
     this.trackGain.connect(this.mix);
 
-    this.voiceChain = createWombChain(ctx, o.womb);
+    this.voiceChain = createWombChain(ctx, o.voiceWomb);
     this.voiceGain = ctx.createGain();
     this.voiceChain.output.connect(this.voiceGain);
     this.voiceGain.connect(this.mix);
@@ -231,7 +255,6 @@ export class SoundEngine extends EventTarget {
     const now = ctx.currentTime;
     this.rumbleSrc.start(now);
     this.shushSrc.start(now);
-    this.envSrc.start(now);
     this.fade.gain.setValueAtTime(0, now);
     this.fade.gain.linearRampToValueAtTime(1, now + 3);
 
@@ -283,7 +306,8 @@ export class SoundEngine extends EventTarget {
 
   setOptions(partial) {
     const womb = partial.womb ? { ...this.options.womb, ...partial.womb } : this.options.womb;
-    this.options = { ...this.options, ...partial, womb };
+    const voiceWomb = partial.voiceWomb ? { ...this.options.voiceWomb, ...partial.voiceWomb } : this.options.voiceWomb;
+    this.options = { ...this.options, ...partial, womb, voiceWomb };
     if (this.ctx) this._applyOptions(false, partial);
   }
 
@@ -335,7 +359,14 @@ export class SoundEngine extends EventTarget {
     const has = (k) => initial || Object.prototype.hasOwnProperty.call(changed, k);
     if (has('cap')) this._ramp(this.capGain.gain, capToGain(o.cap), initial ? 0.01 : 0.15);
     if (has('baselineDb') && !initial) this.setLevel(this.level);
-    if (has('bpm')) this.envSrc.playbackRate.value = clamp(o.bpm, 40, 120) / ENV_BPM;
+    if ((has('bpm') || has('hrv')) && !initial) this._buildHeart();
+    if (has('thumpVolume')) this._ramp(this.thumpGain.gain, (1.5 * clamp(o.thumpVolume, 0, 100)) / 100, 0.2);
+    if (has('gutVolume')) this._ramp(this.gutGain.gain, (1.2 * clamp(o.gutVolume, 0, 100)) / 100, 0.2);
+    if (has('breathDepth')) {
+      const b = clamp(o.breathDepth, 0, 0.6);
+      this.breath.gain.value = 1 - b;
+      this.breathDepth.gain.value = b;
+    }
     if (has('whooshDepth')) {
       const d = clamp(o.whooshDepth, 0, 0.9);
       this.whoosh.gain.value = 1 - d;
@@ -347,15 +378,54 @@ export class SoundEngine extends EventTarget {
     }
     if (has('trackVolume')) this._ramp(this.trackGain.gain, volumeToGain(o.trackVolume), 0.2);
     if (has('voiceVolume')) this._ramp(this.voiceGain.gain, volumeToGain(o.voiceVolume), 0.2);
-    if (has('womb')) {
-      this.trackChain.set(o.womb);
-      this.voiceChain.set(o.womb);
-    }
+    if (has('womb')) this.trackChain.set(o.womb);
+    if (has('voiceWomb')) this.voiceChain.set(o.voiceWomb);
     if (has('wombBypass')) {
       this.trackChain.setBypass(o.wombBypass);
       this.voiceChain.setBypass(o.wombBypass);
     }
     if (has('voiceGapSec') && !initial && this.voiceBlob) this._startVoice();
+  }
+
+  _swap(old) {
+    if (!old) return;
+    try { old.stop(); } catch (_) { /* never started */ }
+    old.disconnect();
+  }
+
+  // Rebuilt whenever the rate or the irregularity changes, so the heart
+  // sounds keep their pitch at any rate.
+  _buildHeart() {
+    const ctx = this.ctx;
+    const o = this.options;
+    const t = heartTimeline({ bpm: clamp(o.bpm, 40, 120), variation: clamp(o.hrv, 0, 100) / 100 });
+    this._swap(this.envSrc);
+    this._swap(this.thumpSrc);
+    this.envSrc = loopSource(ctx, toBuffer(ctx, t.env, t.sampleRate));
+    this.thumpSrc = loopSource(ctx, toBuffer(ctx, t.thump, t.sampleRate));
+    this.envSrc.connect(this.envToWhoosh);
+    this.envSrc.connect(this.envToTone);
+    this.envSrc.connect(this.envToPulse);
+    this.thumpSrc.connect(this.thumpGain);
+    const when = ctx.currentTime + 0.05; // same instant, so whoosh and thump stay together
+    this.envSrc.start(when);
+    this.thumpSrc.start(when);
+  }
+
+  _buildBreath() {
+    const t = breathTimeline({ rate: BREATHS_PER_MIN });
+    this._swap(this.breathSrc);
+    this.breathSrc = loopSource(this.ctx, toBuffer(this.ctx, t.env, t.sampleRate));
+    this.breathSrc.connect(this.breathDepth);
+    this.breathSrc.start();
+  }
+
+  _buildGut() {
+    const t = gutLoop();
+    this._swap(this.gutSrc);
+    this.gutSrc = loopSource(this.ctx, toBuffer(this.ctx, t.samples, t.sampleRate));
+    this.gutSrc.connect(this.gutGain);
+    this.gutSrc.start();
   }
 
   _startTracks() {

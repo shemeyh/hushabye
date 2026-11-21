@@ -36,7 +36,7 @@ It is one static site with no backend. All audio is processed on the phone; noth
 
 | | |
 |---|---|
-| Baseline | Deep brown-noise rumble with a slow heartbeat "whoosh" (75 beats per minute by default). Plays all night, which also stops the speaker from switching itself off. |
+| Baseline | Low rumble with a living heartbeat (whoosh and thump, never perfectly even), slow breathing and occasional soft tummy sounds. Plays all night, which also stops the speaker from switching itself off. |
 | Levels 1 to 4 | Each level is louder and adds a little more mid-range "shush". Changes are smooth ramps. Level 4 is exactly the volume cap. |
 | Crying | When at least 3 of the last 5 seconds contain crying: one level up, then one more every 25 seconds while it continues. |
 | Quiet | One level down per 60 seconds of quiet, back to baseline. |
@@ -46,13 +46,39 @@ It is one static site with no backend. All audio is processed on the phone; noth
 
 All timings are in Settings.
 
+### The womb sound
+
+The generated sound was shaped against a real third-trimester recording made through the mother's abdomen, published with [Parga et al. 2018](https://pmc.ncbi.nlm.nih.gov/articles/PMC5944959) (PLoS ONE, CC BY). Only measurements were taken from it; the app contains no audio from the recording.
+
+| | Recording | Hushabye baseline |
+|---|---|---|
+| Half of the energy lies below | 158 Hz | 147 Hz |
+| 90% of the energy lies below | 235 Hz | 312 Hz |
+| Strongest region | 100 to 250 Hz | 100 to 250 Hz |
+| Heartbeat | thumps at 78 per minute | whoosh and thump, 75 per minute by default |
+| Breathing | 19 per minute | 16 per minute |
+| Loudness moves by (10th to 90th percentile) | 14 dB | 5 dB |
+
+The last row is deliberate. The recording, made with a stethoscope pressed on the skin, is mostly quiet with loud heart thumps. Hushabye keeps a steadier bed because steady low noise is what masks household sounds, and nobody has shown that the jumpier version soothes better. Every layer has its own slider under Settings, Womb sound: heartbeat rate and irregularity, whoosh, thump, breathing, tummy sounds and rumble tone.
+
+The layers:
+
+- **Rumble:** filtered noise centred on 100 to 250 Hz.
+- **Heartbeat:** a blood-flow whoosh plus the two heart sounds of each beat. Beat-to-beat timing varies, and the heart speeds up slightly on each in-breath, as a real one does.
+- **Breathing:** a slow rise and fall of the whole sound.
+- **Tummy sounds:** irregular clusters of low bubbles and the odd longer gurgle, a few seconds to half a minute apart. They stay below about 210 Hz, well under the pitch range the cry detector listens in.
+
+The tests feed the app's own output, with every layer at maximum, straight into both cry detectors and require that none of it counts as crying.
+
 ### Cry detection
 
 The microphone is cut into one-second windows. Each is scored by the YAMNet audio classifier (MediaPipe Tasks, running on the phone in WebAssembly), using its "Baby cry, infant cry" class plus a little weight from "Crying, sobbing" and "Whimper". While the model loads, or if it cannot load, a simpler detector takes over: sound clearly above the room's noise floor, with a strong steady pitch in the infant range (250 to 650 Hz) that is not a harmonic of a lower adult voice.
 
 ### Womb filter (for your own audio files and for mom's voice)
 
-Choose audio files in Settings and they loop softly under the rumble, filtered to sound roughly as they would from inside the uterus. A recorded voice clip goes through the same filter.
+Choose audio files in Settings and they loop softly under the rumble, filtered to sound roughly as they would from inside the uterus. A recorded voice clip goes through a filter of its own: a mother's voice reaches the baby through her body, about 5 dB louder inside than outside, so it is warmer and less muffled than sound arriving from the room.
+
+What to record matters more than the filter. Newborns have been shown to prefer a story their mother read aloud in late pregnancy and music she heard daily, and that preference fades within weeks if it is not kept up. So use something from the pregnancy, in her voice, and start early.
 
 What published measurements say:
 

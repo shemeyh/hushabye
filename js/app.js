@@ -10,7 +10,7 @@ import * as store from './store.js';
 const $ = (id) => document.getElementById(id);
 
 // Shown at the bottom of the page. Keep in step with VERSION in sw.js.
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 
 let settings = store.loadSettings();
 const engine = new SoundEngine(settings.sound);
@@ -826,8 +826,17 @@ const GROUPS = [
     title: 'Womb sound',
     fields: [
       { path: 'sound.bpm', label: 'Heartbeat', type: 'range', min: 60, max: 90, step: 1, fmt: (v) => `${v} beats per minute` },
-      { path: 'sound.whooshDepth', label: 'Pulse strength', type: 'range', min: 0, max: 0.8, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%` },
-      { path: 'sound.tone', label: 'Rumble tone', type: 'range', min: 300, max: 800, step: 10, fmt: (v) => `${v} Hz`, help: 'Lower is deeper and more muffled.' },
+      { path: 'sound.hrv', label: 'Heartbeat irregularity', type: 'range', min: 0, max: 100, step: 5, fmt: (v) => (v === 0 ? 'Metronome' : `${v}%`),
+        help: 'A real heart never beats evenly. 0 is a metronome.' },
+      { path: 'sound.whooshDepth', label: 'Blood-flow whoosh', type: 'range', min: 0, max: 0.8, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`,
+        help: 'How much the rumble surges with each beat.' },
+      { path: 'sound.thumpVolume', label: 'Heartbeat thump', type: 'range', min: 0, max: 100, step: 5, fmt: (v) => (v === 0 ? 'Off' : `${v}%`),
+        help: 'The two low heart sounds on each beat.' },
+      { path: 'sound.breathDepth', label: 'Breathing', type: 'range', min: 0, max: 0.6, step: 0.05, fmt: (v) => (v === 0 ? 'Off' : `${Math.round(v * 100)}%`),
+        help: 'A slow rise and fall, about 16 breaths a minute.' },
+      { path: 'sound.gutVolume', label: 'Tummy sounds', type: 'range', min: 0, max: 100, step: 5, fmt: (v) => (v === 0 ? 'Off' : `${v}%`),
+        help: 'Occasional soft low gurgles, every few seconds to half a minute.' },
+      { path: 'sound.tone', label: 'Rumble tone', type: 'range', min: 200, max: 800, step: 10, fmt: (v) => `${v} Hz`, help: 'Lower is deeper and more muffled.' },
     ],
   },
   {
@@ -859,7 +868,9 @@ const GROUPS = [
     title: "Mom's voice",
     fields: [
       { custom: 'voice' },
-      { path: 'voiceEnabled', label: 'Play the voice clip', type: 'toggle', help: 'Loops softly through the womb filter.' },
+      { path: 'voiceEnabled', label: 'Play the voice clip', type: 'toggle', help: "Loops softly through its own filter. A mother's voice reaches the baby through her body, so it is warmer and less muffled than music from outside." },
+      { path: 'sound.voiceWomb.cutoff', label: 'Voice muffling starts at', type: 'range', min: 150, max: 1500, step: 10, fmt: (v) => `${v} Hz` },
+      { path: 'sound.voiceWomb.bodyBoostDb', label: 'Voice warmth', type: 'range', min: 0, max: 8, step: 0.5, fmt: (v) => `+${v} dB below 250 Hz` },
       { path: 'sound.voiceVolume', label: 'Voice volume', type: 'range', min: 0, max: 100, step: 1, fmt: (v) => `${v}%` },
       { path: 'sound.voiceGapSec', label: 'Silence between repeats', type: 'range', min: 0, max: 60, step: 1, fmt: (v) => `${v} s` },
     ],
@@ -903,6 +914,8 @@ function applySetting(path, value) {
   if (path.startsWith('sound.womb.')) {
     engine.setOptions({ womb: { [path.split('.')[2]]: value } });
     drawCurve();
+  } else if (path.startsWith('sound.voiceWomb.')) {
+    engine.setOptions({ voiceWomb: { [path.split('.')[2]]: value } });
   } else if (path.startsWith('sound.')) {
     engine.setOptions({ [path.split('.')[1]]: value });
   } else if (path === 'sensitivity') {

@@ -34,10 +34,14 @@ export class CryDetector extends EventTarget {
     this.ownsCtx = false;
   }
 
-  /** @param ctx optional AudioContext to share with the sound engine */
-  async start(ctx) {
+  /**
+   * @param ctx optional AudioContext to share with the sound engine
+   * @param stream optional MediaStream to listen to instead of the microphone
+   *        (the tests feed the app's own output back in this way)
+   */
+  async start(ctx, stream) {
     if (this.stream) return;
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    this.stream = stream || await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: this.echoCancellation,
         noiseSuppression: false,

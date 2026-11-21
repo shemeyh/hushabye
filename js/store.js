@@ -10,7 +10,7 @@ const DB_VERSION = 1;
 const KEEP_NIGHTS_MS = 7 * 24 * 3600 * 1000;
 
 export const DEFAULT_SETTINGS = {
-  version: 2,
+  version: 3,
   setupDone: false,
   sound: { ...DEFAULT_SOUND },
   timings: { ...DEFAULT_TIMINGS },
@@ -39,10 +39,15 @@ export function loadSettings() {
     delete saved.echoCancellation;
     saved.version = 2;
   }
+  if (saved.version < 3) {
+    // Version 3 retuned the rumble against a real recording.
+    if (saved.sound && saved.sound.tone === 500) delete saved.sound.tone;
+    saved.version = 3;
+  }
   return {
     ...DEFAULT_SETTINGS,
     ...saved,
-    sound: { ...DEFAULT_SETTINGS.sound, ...(saved.sound || {}), womb: { ...DEFAULT_SOUND.womb, ...((saved.sound || {}).womb || {}) } },
+    sound: { ...DEFAULT_SETTINGS.sound, ...(saved.sound || {}), womb: { ...DEFAULT_SOUND.womb, ...((saved.sound || {}).womb || {}) }, voiceWomb: { ...DEFAULT_SOUND.voiceWomb, ...((saved.sound || {}).voiceWomb || {}) } },
     timings: { ...DEFAULT_SETTINGS.timings, ...(saved.timings || {}) },
   };
 }

@@ -4,6 +4,7 @@ import { step, initialState, DEFAULT_TIMINGS } from '../js/state-machine.js';
 import { wombResponseDb, WOMB_PRESETS } from '../js/womb-filter.js';
 import { levelGains, capToGain, heartbeatEnvelope } from '../js/sound-engine.js';
 import { createHeuristic } from '../js/heuristic.js';
+import { heartTimeline, breathTimeline, gutLoop, mulberry32 } from '../js/womb-sounds.js';
 import { biquadCoeffs, biquadInPlace, makeSeamless, rms } from '../js/dsp.js';
 
 const tests = [];
@@ -298,6 +299,95 @@ test('seamless loop: the end of the buffer flows into its start', () => {
   equal(out.length, n);
   const typical = rms(out) * 0.2;
   assert(Math.abs(out[0] - out[n - 1]) < typical, 'no jump at the loop point');
+});
+
+// ------------------------------------------------- heart, breath, tummy
+
+/** Rough pitch of a stretch of audio, from how often it crosses zero. */
+function zeroCrossRate(x, sr, from = 0, to = x.length) {
+  let n = 0;
+  for (let i = from + 1; i < to; i++) if ((x[i - 1] < 0) !== (x[i] < 0)) n++;
+  return (n / 2) / ((to - from) / sr);
+}
+
+test('heartbeat: average rate is exact and variation 0 is a metronome', () => {
+  const steady = heartTimeline({ bpm: 75, beats: 64, variation: 0, rng: mulberry32(1) });
+  near(steady.duration, 64 * 0.8, 0.001, 'loop length');
+  for (let i = 1; i < steady.beatTimes.length; i++) {
+    near(steady.beatTimes[i] - steady.beatTimes[i - 1], 0.8, 1e-9, 'even beats');
+  }
+  const loose = heartTimeline({ bpm: 60, beats: 64, variation: 1, rng: mulberry32(1) });
+  near(loose.duration, 64, 0.001, 'average rate kept with variation');
+});
+
+test('heartbeat: variation makes beats uneven, within a healthy range', () => {
+  const t = heartTimeline({ bpm: 75, beats: 64, variation: 1, rng: mulberry32(7) });
+  const gaps = t.beatTimes.slice(1).map((b, i) => b - t.beatTimes[i]);
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const sd = Math.sqrt(gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length);
+  assert(sd / mean > 0.02 && sd / mean < 0.1, 'spread ' + (100 * sd / mean).toFixed(1) + '%');
+  assert(Math.min(...gaps) > 0.55 && Math.max(...gaps) < 1.1, 'no absurd beats');
+});
+
+test('heartbeat: whoosh stays within 0..1, thump is low and bounded', () => {
+  const t = heartTimeline({ bpm: 75, variation: 0.4, rng: mulberry32(3) });
+  let lo = 1, hi = 0, peak = 0;
+  for (let i = 0; i < t.env.length; i++) {
+    lo = Math.min(lo, t.env[i]);
+    hi = Math.max(hi, t.env[i]);
+    peak = Math.max(peak, Math.abs(t.thump[i]));
+  }
+  assert(lo >= 0, 'envelope never negative');
+  near(hi, 1, 1e-6, 'envelope peak');
+  near(peak, 0.6, 1e-6, 'thump peak');
+  equal(t.env.length, t.thump.length, 'both loops the same length');
+  const first = Math.round(t.beatTimes[5] * t.sampleRate);
+  const pitch = zeroCrossRate(t.thump, t.sampleRate, first, first + Math.round(0.08 * t.sampleRate));
+  assert(pitch > 70 && pitch < 150, 'thump pitch ' + pitch.toFixed(0) + ' Hz');
+});
+
+test('heartbeat: the same seed gives the same timeline', () => {
+  const a = heartTimeline({ rng: mulberry32(42) });
+  const b = heartTimeline({ rng: mulberry32(42) });
+  assert(a.env.every((v, i) => v === b.env[i]), 'identical envelopes');
+});
+
+test('breathing: one smooth swell per breath, loops without a jump', () => {
+  const t = breathTimeline({ rate: 16, breaths: 12, rng: mulberry32(5) });
+  near(t.duration, 12 * 3.75, 6, 'about 12 breaths long');
+  let peaks = 0, hi = 0, lo = 1;
+  for (let i = 1; i < t.env.length - 1; i++) {
+    if (t.env[i - 1] < 0.3 && t.env[i] >= 0.3) peaks++; // one upward crossing per breath
+    hi = Math.max(hi, t.env[i]);
+    lo = Math.min(lo, t.env[i]);
+  }
+  equal(peaks, 12, 'peaks');
+  assert(lo >= 0 && hi <= 1, 'within 0..1');
+  assert(t.env[0] < 0.01 && t.env[t.env.length - 1] < 0.01, 'starts and ends at rest');
+});
+
+test('tummy sounds: sparse, low, bounded, and silent at the loop point', () => {
+  const t = gutLoop({ seconds: 83, rng: mulberry32(9) });
+  const sr = t.sampleRate, x = t.samples;
+  let peak = 0, active = 0;
+  for (let i = 0; i < x.length; i++) {
+    const a = Math.abs(x[i]);
+    peak = Math.max(peak, a);
+    if (a > 0.01) active++;
+  }
+  near(peak, 0.5, 1e-6, 'peak');
+  const share = active / x.length;
+  assert(share > 0.02 && share < 0.4, 'sounding ' + (100 * share).toFixed(0) + '% of the time');
+  assert(rms(x, 0, 1.9 * sr) === 0, 'silent at the start');
+  assert(rms(x, x.length - sr, x.length) === 0, 'silent at the end');
+  // No sound up in the cry detector's pitch range (250 Hz and above).
+  let loudest = 0, at = 0;
+  for (let i = 0; i + 400 < x.length; i += 400) {
+    const r = rms(x, i, i + 400);
+    if (r > loudest) { loudest = r; at = i; }
+  }
+  const pitch = zeroCrossRate(x, sr, at, at + 400);
+  assert(pitch < 230, 'loudest moment is at ' + pitch.toFixed(0) + ' Hz');
 });
 
 // -------------------------------------------------------- cry heuristic
