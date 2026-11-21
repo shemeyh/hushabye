@@ -366,6 +366,17 @@ test('breathing: one smooth swell per breath, loops without a jump', () => {
   assert(t.env[0] < 0.01 && t.env[t.env.length - 1] < 0.01, 'starts and ends at rest');
 });
 
+test('breathing: the rate asked for is the rate you get', () => {
+  for (const rate of [10, 16, 24]) {
+    const breaths = Math.round(rate * 0.75);
+    const t = breathTimeline({ rate, breaths, variation: 1, rng: mulberry32(rate) });
+    near(t.duration, (breaths * 60) / rate, 0.01, rate + ' a minute');
+    let swells = 0;
+    for (let i = 1; i < t.env.length; i++) if (t.env[i - 1] < 0.3 && t.env[i] >= 0.3) swells++;
+    equal(swells, breaths, 'swells at ' + rate + ' a minute');
+  }
+});
+
 test('tummy sounds: sparse, low, bounded, and silent at the loop point', () => {
   const t = gutLoop({ seconds: 83, rng: mulberry32(9) });
   const sr = t.sampleRate, x = t.samples;

@@ -479,6 +479,26 @@ def t_in_app_browser(page, base):
     return "in-app browser is explained, with an Open in Chrome link"
 
 
+def t_breathing_rate(page, base):
+    """The breathing-rate slider changes the pace of the breathing loop while playing."""
+    open_app(page, base, "?model=off")
+    start(page)
+    check(hush(page, "h.settings.sound.breathRate") == 16, "default breathing rate is not 16")
+    got = []
+    for rate in (16, 10, 24):
+        hush(page, f"h.applySetting('sound.breathRate', {rate})")
+        breaths = round(rate * 0.75)
+        dur = hush(page, "h.engine.breathSrc.buffer.duration")
+        check(abs(dur - breaths * 60 / rate) < 0.05, f"at {rate} a minute the loop is {dur:.2f} s")
+        got.append(f"{rate}/min -> {dur:.1f} s loop of {breaths}")
+    page.click("#settingsBtn")
+    page.wait_for_selector("#settingsForm >> text=Breathing rate")
+    check(page.locator("#settingsForm >> text=24 breaths per minute").count() == 1, "slider does not show the rate")
+    page.wait_for_timeout(1500)
+    check(hush(page, "h.engine.outputDb()") > -60, "sound stopped after changing the rate")
+    return "; ".join(got)
+
+
 def t_music_and_filter(page, base):
     open_app(page, base)
     page.click("#settingsBtn")
@@ -543,6 +563,7 @@ SCENARIOS = [
     ("setup_mic_step", t_setup_mic_step, "quiet.wav", True),
     ("setup_mic_blocked", t_setup_mic_blocked, None, False),
     ("in_app_browser", t_in_app_browser, None, False),
+    ("breathing_rate", t_breathing_rate, "quiet.wav", True),
     ("music_and_filter", t_music_and_filter, "quiet.wav", True),
     ("phone_test_page", t_phone_test_page, "quiet.wav", True),
 ]

@@ -10,7 +10,7 @@ import * as store from './store.js';
 const $ = (id) => document.getElementById(id);
 
 // Shown at the bottom of the page. Keep in step with VERSION in sw.js.
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 
 let settings = store.loadSettings();
 const engine = new SoundEngine(settings.sound);
@@ -833,7 +833,9 @@ const GROUPS = [
       { path: 'sound.thumpVolume', label: 'Heartbeat thump', type: 'range', min: 0, max: 100, step: 5, fmt: (v) => (v === 0 ? 'Off' : `${v}%`),
         help: 'The two low heart sounds on each beat.' },
       { path: 'sound.breathDepth', label: 'Breathing', type: 'range', min: 0, max: 0.6, step: 0.05, fmt: (v) => (v === 0 ? 'Off' : `${Math.round(v * 100)}%`),
-        help: 'A slow rise and fall, about 16 breaths a minute.' },
+        help: 'How much the sound rises and falls with each breath.' },
+      { path: 'sound.breathRate', label: 'Breathing rate', type: 'range', min: 10, max: 24, step: 1, fmt: (v) => `${v} breaths per minute`,
+        help: 'A resting adult takes 12 to 20. The heartbeat quickens slightly on each in-breath, so it follows this too.' },
       { path: 'sound.gutVolume', label: 'Tummy sounds', type: 'range', min: 0, max: 100, step: 5, fmt: (v) => (v === 0 ? 'Off' : `${v}%`),
         help: 'Occasional soft low gurgles, every few seconds to half a minute.' },
       { path: 'sound.tone', label: 'Rumble tone', type: 'range', min: 200, max: 800, step: 10, fmt: (v) => `${v} Hz`, help: 'Lower is deeper and more muffled.' },

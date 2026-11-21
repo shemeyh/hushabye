@@ -59,7 +59,7 @@ The generated sound was shaped against a real third-trimester recording made thr
 | Breathing | 19 per minute | 16 per minute |
 | Loudness moves by (10th to 90th percentile) | 14 dB | 5 dB |
 
-The last row is deliberate. The recording, made with a stethoscope pressed on the skin, is mostly quiet with loud heart thumps. Hushabye keeps a steadier bed because steady low noise is what masks household sounds, and nobody has shown that the jumpier version soothes better. Every layer has its own slider under Settings, Womb sound: heartbeat rate and irregularity, whoosh, thump, breathing, tummy sounds and rumble tone.
+The last row is deliberate. The recording, made with a stethoscope pressed on the skin, is mostly quiet with loud heart thumps. Hushabye keeps a steadier bed because steady low noise is what masks household sounds, and nobody has shown that the jumpier version soothes better. Every layer has its own slider under Settings, Womb sound: heartbeat rate and irregularity, whoosh, thump, breathing strength and rate, tummy sounds and rumble tone.
 
 The layers:
 

@@ -1,7 +1,7 @@
 // Offline support: everything the app needs is cached on first visit, so it
 // keeps working in airplane mode. Bump VERSION (and APP_VERSION in js/app.js)
 // when files change.
-const VERSION = 'hushabye-v6';
+const VERSION = 'hushabye-v7';
 const CORE = [
   './', 'index.html', 'phone-test.html', 'manifest.webmanifest',
   'css/app.css',

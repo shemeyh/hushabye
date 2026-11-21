@@ -25,6 +25,7 @@ export const DEFAULT_SOUND = {
   hrv: 60,             // 0-100; how irregular the heartbeat is (0 = metronome)
   thumpVolume: 50,     // 0-100; the two low heart sounds on each beat
   breathDepth: 0.3,    // 0-0.6; slow swell at breathing pace
+  breathRate: 16,      // breaths per minute
   gutVolume: 30,       // 0-100; occasional low tummy sounds
   tone: 300,           // rumble low-pass, Hz
   trackVolume: 50,     // 0-100
@@ -43,7 +44,9 @@ const NOISE_RMS = 0.16;
 const SHUSH_MIX_AT_TOP = 0.45;
 const TRACK_TARGET_RMS = 0.1;
 const LEVEL_TC = 1.2;      // seconds; time constant of level changes
-const BREATHS_PER_MIN = 16;
+const BREATH_LOOP_SEC = 45; // the breathing loop is about this long at any rate
+
+const breathRateOf = (o) => clamp(o.breathRate, 8, 30);
 
 export function capToGain(cap) {
   if (cap <= 0) return 0;
@@ -359,7 +362,8 @@ export class SoundEngine extends EventTarget {
     const has = (k) => initial || Object.prototype.hasOwnProperty.call(changed, k);
     if (has('cap')) this._ramp(this.capGain.gain, capToGain(o.cap), initial ? 0.01 : 0.15);
     if (has('baselineDb') && !initial) this.setLevel(this.level);
-    if ((has('bpm') || has('hrv')) && !initial) this._buildHeart();
+    if ((has('bpm') || has('hrv') || has('breathRate')) && !initial) this._buildHeart();
+    if (has('breathRate') && !initial) this._buildBreath();
     if (has('thumpVolume')) this._ramp(this.thumpGain.gain, (1.5 * clamp(o.thumpVolume, 0, 100)) / 100, 0.2);
     if (has('gutVolume')) this._ramp(this.gutGain.gain, (1.2 * clamp(o.gutVolume, 0, 100)) / 100, 0.2);
     if (has('breathDepth')) {
@@ -398,7 +402,11 @@ export class SoundEngine extends EventTarget {
   _buildHeart() {
     const ctx = this.ctx;
     const o = this.options;
-    const t = heartTimeline({ bpm: clamp(o.bpm, 40, 120), variation: clamp(o.hrv, 0, 100) / 100 });
+    const t = heartTimeline({
+      bpm: clamp(o.bpm, 40, 120),
+      variation: clamp(o.hrv, 0, 100) / 100,
+      breathSec: 60 / breathRateOf(o), // the heart quickens on each in-breath
+    });
     this._swap(this.envSrc);
     this._swap(this.thumpSrc);
     this.envSrc = loopSource(ctx, toBuffer(ctx, t.env, t.sampleRate));
@@ -413,7 +421,8 @@ export class SoundEngine extends EventTarget {
   }
 
   _buildBreath() {
-    const t = breathTimeline({ rate: BREATHS_PER_MIN });
+    const rate = breathRateOf(this.options);
+    const t = breathTimeline({ rate, breaths: Math.round((rate * BREATH_LOOP_SEC) / 60) });
     this._swap(this.breathSrc);
     this.breathSrc = loopSource(this.ctx, toBuffer(this.ctx, t.env, t.sampleRate));
     this.breathSrc.connect(this.breathDepth);

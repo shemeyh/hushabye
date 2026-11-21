@@ -74,14 +74,15 @@ function addThump(buf, sr, start, f0, f1, decay, amp) {
  *   env   - 0..1 control signal for the blood-flow "whoosh"
  *   thump - the two heart sounds of each beat, as audio
  * `variation` 0 is a metronome; 1 is a relaxed adult (about 5% beat-to-beat
- * change, plus the heart speeding up a little on each in-breath).
+ * change, plus the heart speeding up a little on each in-breath, one breath
+ * every `breathSec` seconds).
  */
-export function heartTimeline({ bpm = 75, beats = 64, variation = 0.4, sampleRate = 8000, rng = Math.random } = {}) {
+export function heartTimeline({ bpm = 75, beats = 64, variation = 0.4, breathSec = 3.75, sampleRate = 8000, rng = Math.random } = {}) {
   const mean = 60 / bpm;
   let durs = [];
   let breath = rng() * TAU;
   for (let i = 0; i < beats; i++) {
-    breath += (TAU * mean) / 3.6;
+    breath += (TAU * mean) / breathSec;
     const d = 1 + variation * (0.05 * gauss(rng) + 0.04 * Math.sin(breath));
     durs.push(clamp(d, 0.75, 1.3));
   }
@@ -109,14 +110,24 @@ export function heartTimeline({ bpm = 75, beats = 64, variation = 0.4, sampleRat
   return { env, thump, beatTimes, duration: n / sampleRate, sampleRate };
 }
 
-/** Slow breathing as a 0..1 control loop: rise on the in-breath, longer fall. */
+/**
+ * Slow breathing as a 0..1 control loop: rise on the in-breath, longer fall.
+ * Single breaths vary in length; the average over the loop is exactly `rate`.
+ */
 export function breathTimeline({ rate = 16, breaths = 12, variation = 0.5, sampleRate = 8000, rng = Math.random } = {}) {
   const mean = 60 / rate;
+  const raw = [];
+  let weight = 0;
+  for (let i = 0; i < breaths; i++) {
+    const w = clamp(1 + 0.12 * variation * gauss(rng), 0.7, 1.4);
+    const depth = clamp(1 - 0.2 * variation * Math.abs(gauss(rng)), 0.6, 1);
+    raw.push({ w, depth });
+    weight += w;
+  }
   const parts = [];
   let total = 0;
-  for (let i = 0; i < breaths; i++) {
-    const len = Math.round(mean * clamp(1 + 0.12 * variation * gauss(rng), 0.7, 1.4) * sampleRate);
-    const depth = clamp(1 - 0.2 * variation * Math.abs(gauss(rng)), 0.6, 1);
+  for (const { w, depth } of raw) {
+    const len = Math.round((mean * sampleRate * breaths * w) / weight);
     parts.push({ len, depth });
     total += len;
   }
