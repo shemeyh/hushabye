@@ -10,7 +10,7 @@ import * as store from './store.js';
 const $ = (id) => document.getElementById(id);
 
 // Shown at the bottom of the page. Keep in step with VERSION in sw.js.
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 let settings = store.loadSettings();
 const engine = new SoundEngine(settings.sound);
@@ -275,9 +275,7 @@ async function start() {
     outputsSnapshot = await snapshotOutputs();
     recordDiagnostics();
     watchdogTimer = setInterval(watchdog, 5000);
-    if ('mediaSession' in navigator && window.MediaMetadata) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: 'Hushabye', artist: 'Womb sound' });
-    }
+    setMediaControls(true);
   } catch (err) {
     log('Could not start: ' + err.message, 'alert');
   } finally {
@@ -301,11 +299,29 @@ async function stop() {
   micOk = false;
   await engine.stop();
   engine.setSafetyMute(false);
+  setMediaControls(false);
   releaseWakeLock();
   hideBanner();
   $('micBar').style.width = '0%';
   $('startStop').disabled = false;
   render();
+}
+
+// The phone's media notification, lock screen and the speaker's own
+// play/pause button. Pause there stops Hushabye: the quiet direction is the
+// safe one, and a paused app that still looked "on" would mislead.
+function setMediaControls(on) {
+  if (!('mediaSession' in navigator)) return;
+  const ms = navigator.mediaSession;
+  const set = (action, fn) => {
+    try { ms.setActionHandler(action, fn); } catch (_) { /* action not supported here */ }
+  };
+  if (on && window.MediaMetadata) ms.metadata = new MediaMetadata({ title: 'Hushabye', artist: 'Womb sound' });
+  ms.playbackState = on ? 'playing' : 'none';
+  const halt = on ? () => { log('Stopped from the media controls'); stop(); } : null;
+  set('pause', halt);
+  set('stop', halt);
+  set('play', on ? () => engine.resume() : null);
 }
 
 async function startDetector() {
@@ -628,6 +644,7 @@ function watchdog() {
     interrupted = false;
     log('Audio resumed');
   }
+  if (engine.keepEl && engine.keepEl.paused) engine.resume();
   const silentFor = performance.now() - lastWindowReal;
   if (micOk && silentFor > 15000 && !stalled) {
     stalled = true;
@@ -668,7 +685,7 @@ document.addEventListener('visibilitychange', () => {
     engine.resume();
     if (!micOk || micSilent >= 3 || deafSince) reconnectMic(true);
   } else {
-    log('Screen off or app in the background: listening will stop', 'alert');
+    log('Screen off or app in the background: the sound keeps playing, but listening will stop', 'alert');
   }
 });
 

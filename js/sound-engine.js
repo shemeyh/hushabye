@@ -112,6 +112,26 @@ export function heartbeatEnvelope(n) {
   return e;
 }
 
+/**
+ * Half a minute of sound far too quiet to hear, as a WAV file. Looping it in
+ * an ordinary audio player makes the phone treat the page as a music player:
+ * it shows a media notification and keeps the page alive in the background.
+ * Sound made with Web Audio alone does not get that treatment.
+ */
+export function keepAliveWav(seconds = 30, sampleRate = 8000) {
+  const n = Math.round(seconds * sampleRate);
+  const view = new DataView(new ArrayBuffer(44 + 2 * n));
+  const text = (at, str) => { for (let i = 0; i < str.length; i++) view.setUint8(at + i, str.charCodeAt(i)); };
+  text(0, 'RIFF'); view.setUint32(4, 36 + 2 * n, true); text(8, 'WAVE');
+  text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, 2 * sampleRate, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, 'data'); view.setUint32(40, 2 * n, true);
+  // About 84 dB below full scale: not silence, so no phone skips it as empty.
+  for (let i = 0; i < n; i++) view.setInt16(44 + 2 * i, Math.round(Math.random() * 4 - 2), true);
+  return view.buffer;
+}
+
 function toBuffer(ctx, data, sampleRate = ctx.sampleRate) {
   const buf = ctx.createBuffer(1, data.length, sampleRate);
   buf.copyToChannel(data, 0);
@@ -189,6 +209,7 @@ export class SoundEngine extends EventTarget {
     } else {
       this.safety.connect(ctx.destination);
     }
+    this._startKeepAlive();
 
     // ---- generated womb sound ----
     this.rumbleSrc = loopSource(ctx, toBuffer(ctx, brownNoise(sr, 29)));
@@ -288,6 +309,7 @@ export class SoundEngine extends EventTarget {
       this.outEl.srcObject = null;
       this.outEl = null;
     }
+    this._stopKeepAlive();
     ctx.onstatechange = null;
     await ctx.close().catch(() => {});
   }
@@ -296,6 +318,7 @@ export class SoundEngine extends EventTarget {
   async resume() {
     if (this.ctx && this.ctx.state !== 'running') await this.ctx.resume().catch(() => {});
     if (this.outEl && this.outEl.paused) await this.outEl.play().catch(() => {});
+    if (this.keepEl && this.keepEl.paused) await this.keepEl.play().catch(() => {});
     return this.ctx ? this.ctx.state : 'closed';
   }
 
@@ -389,6 +412,28 @@ export class SoundEngine extends EventTarget {
       this.voiceChain.setBypass(o.wombBypass);
     }
     if (has('voiceGapSec') && !initial && this.voiceBlob) this._startVoice();
+  }
+
+  _startKeepAlive() {
+    this._stopKeepAlive();
+    try {
+      this.keepUrl = URL.createObjectURL(new Blob([keepAliveWav()], { type: 'audio/wav' }));
+      this.keepEl = new Audio(this.keepUrl);
+      this.keepEl.loop = true;
+      this.keepEl.play().catch((err) => this._emit('warning', { message: 'Background keep-alive could not start: ' + err.message }));
+    } catch (err) {
+      this._emit('warning', { message: 'Background keep-alive could not start: ' + err.message });
+    }
+  }
+
+  _stopKeepAlive() {
+    if (this.keepEl) {
+      this.keepEl.pause();
+      this.keepEl.removeAttribute('src');
+      this.keepEl = null;
+    }
+    if (this.keepUrl) URL.revokeObjectURL(this.keepUrl);
+    this.keepUrl = null;
   }
 
   _swap(old) {

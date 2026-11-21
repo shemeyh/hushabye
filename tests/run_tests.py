@@ -499,6 +499,30 @@ def t_breathing_rate(page, base):
     return "; ".join(got)
 
 
+def t_background_keepalive(page, base):
+    """A quiet looping player runs beside the sound so the phone keeps the page alive off screen."""
+    open_app(page, base, "?model=off")
+    start(page)
+    page.wait_for_function("window.__hush.engine.keepEl && window.__hush.engine.keepEl.currentTime > 1", timeout=15000)
+    check(not hush(page, "h.engine.keepEl.paused"), "keep-alive player is paused")
+    check(hush(page, "h.engine.keepEl.loop"), "keep-alive player does not loop")
+    dur = hush(page, "h.engine.keepEl.duration")
+    check(abs(dur - 30) < 0.1, f"keep-alive file is {dur} s long")
+    check(page.evaluate("navigator.mediaSession.playbackState") == "playing", "media session not marked as playing")
+    # The phone pauses players when another app takes the sound; the watchdog restarts it.
+    hush(page, "h.engine.keepEl.pause()")
+    page.wait_for_function("!window.__hush.engine.keepEl.paused", timeout=12000)
+    check(hush(page, "h.engine.outputDb()") > -60, "the womb sound is not playing")
+    page.click("#startStop")
+    try:  # Stop fades the sound out first, so the player goes a moment later
+        page.wait_for_function("!window.__hush.engine.running && !window.__hush.engine.keepEl", timeout=10000)
+    except Exception:
+        check(False, "keep-alive player left running after Stop")
+    page.wait_for_function("!document.querySelector('#startStop').disabled", timeout=10000)
+    check(page.evaluate("navigator.mediaSession.playbackState") == "none", "media session still marked as playing")
+    return "keep-alive player runs with the sound, restarts if paused, ends on Stop"
+
+
 def t_music_and_filter(page, base):
     open_app(page, base)
     page.click("#settingsBtn")
@@ -564,6 +588,7 @@ SCENARIOS = [
     ("setup_mic_blocked", t_setup_mic_blocked, None, False),
     ("in_app_browser", t_in_app_browser, None, False),
     ("breathing_rate", t_breathing_rate, "quiet.wav", True),
+    ("background_keepalive", t_background_keepalive, "quiet.wav", True),
     ("music_and_filter", t_music_and_filter, "quiet.wav", True),
     ("phone_test_page", t_phone_test_page, "quiet.wav", True),
 ]
